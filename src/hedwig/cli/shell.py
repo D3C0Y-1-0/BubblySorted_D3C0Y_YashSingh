@@ -6,7 +6,12 @@ from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.layout.containers import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -16,6 +21,87 @@ from hedwig.cli import commands
 from hedwig.ui.mascot import banner
 
 console = Console()
+
+# ── Hedwig colour tokens ──────────────────────────────────────────────────────
+# Separator: muted warm-grey / brown (subtle framing, not bright yellow).
+_SEP_COLOUR = "#4a3f35"
+# Prompt "> ": golden accent echoing the owl's armor.
+_PROMPT_COLOUR = "#f5bd2a"
+# Command text in the suggestion menu.
+_CMD_COLOUR = "#f5bd2a"
+
+# ── prompt_toolkit Style ──────────────────────────────────────────────────────
+# Covers: prompt chrome, completion menu, and the bottom toolbar.
+HEDWIG_STYLE = Style.from_dict(
+    {
+        # Prompt chrome ---------------------------------------------------------
+        "separator": _SEP_COLOUR,
+        "prompt": f"bold {_PROMPT_COLOUR}",
+        # Completion menu body --------------------------------------------------
+        # Dark theme neutral charcoal background; commands in gold.
+        "completion-menu": f"bg:#141414 {_CMD_COLOUR}",
+        "completion-menu.completion": f"bg:#141414 bold {_CMD_COLOUR}",
+        # Selected row: golden-yellow selection with readable dark text.
+        "completion-menu.completion.current": "bg:#b9800f #141414 bold",
+        # Completion meta (description)
+        "completion-menu.meta.completion": f"bg:#141414 {_CMD_COLOUR}",
+        "completion-menu.meta.completion.current": "bg:#b9800f #141414",
+        # Scrollbar -------------------------------------------------------------
+        "scrollbar.background": "bg:#1c1c1c",
+        "scrollbar.button": "bg:#383838",
+        # Bottom toolbar --------------------------------------------------------
+        "bottom-toolbar": "bg:#141414 #888888",
+        "bottom-toolbar.text": "bg:#141414 #888888",
+    }
+)
+
+
+def _terminal_width() -> int:
+    """Current terminal width, falling back to 80 when called outside a live app."""
+    try:
+        from prompt_toolkit.application import get_app
+
+        return get_app().output.get_size().columns
+    except Exception:
+        return 80
+
+
+def _sep_line() -> list[tuple[str, str]]:
+    """Full-width ─ separator as a FormattedText token list."""
+    return [("class:separator", "─" * _terminal_width())]
+
+
+def _prompt_message() -> FormattedText:
+    """Dynamic prompt: top separator then a newline then the '> ' marker.
+
+    Re-evaluated on every redraw so the top line adapts to terminal resizing.
+    """
+    return FormattedText(
+        _sep_line()
+        + [
+            ("", "\n"),
+            ("class:prompt", "> "),
+        ]
+    )
+
+
+class HedwigPromptSession(PromptSession):
+    """PromptSession with a custom layout positioning horizontal separators around input."""
+
+    def _create_layout(self) -> Layout:
+        layout = super()._create_layout()
+        # Attach the bottom separator directly below the input buffer in the inner HSplit.
+        # This keeps both lines exactly one input row apart, forming a compact three-row box.
+        c0 = layout.container.children[0]
+        float_container = getattr(c0, "alternative_content", None) or c0.content
+        float_container.content.children.append(
+            Window(
+                FormattedTextControl(_sep_line),
+                dont_extend_height=True,
+                height=1,
+            )
+        )
+        return layout
 
 
 class Session:
@@ -43,6 +129,7 @@ class Session:
         console.print(Panel(body, border_style="gold1", expand=False))
 
     def toolbar(self) -> str:
+        """Single-line status bar anchored at the bottom of the terminal."""
         return f" {self.root} · {settings.get('model')} · /help"
 
 
@@ -131,16 +218,17 @@ def handle(session: Session, line: str) -> None:
 def run() -> None:
     session = Session(Path.cwd())
     settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    prompt = PromptSession(
+    prompt = HedwigPromptSession(
         history=FileHistory(str(settings.CONFIG_DIR / "history")),
         completer=SlashCompleter(),
         complete_while_typing=True,
         bottom_toolbar=session.toolbar,
+        style=HEDWIG_STYLE,
     )
     session.welcome()
     while session.running:
         try:
-            line = prompt.prompt("> ")
+            line = prompt.prompt(_prompt_message)
         except KeyboardInterrupt:
             continue
         except EOFError:
