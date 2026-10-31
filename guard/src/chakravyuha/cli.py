@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import contextlib
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -33,6 +34,12 @@ def load_env(path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["illusion"]:  # the Illusionist builds the decoy content before the demo
+        from . import illusionist
+
+        load_env(config.GUARD_ROOT / ".env")
+        raise SystemExit(illusionist.main(argv[1:]))
     parser = argparse.ArgumentParser(prog="chakravyuha", description=__doc__)
     parser.add_argument("--config", type=Path, default=config.DEFAULT_CONFIG)
     parser.add_argument("--host", default="127.0.0.1")  # one machine: loopback only

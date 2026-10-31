@@ -134,6 +134,14 @@ def login_credentials(ctx: Ctx, secret: bytes) -> None:
         ctx.password_fp = password_fp(secret, str(password))
 
 
+LEVEL_TIGHTEN = {"calm": 0, "alert": 2, "siege": 4}
+
+
+def max_failures(state: State, config: Config) -> int:
+    """Failures that trip ring 5: 8 when calm, 6 at alert, 4 at siege."""
+    return max(config.login.max_failures - LEVEL_TIGHTEN.get(state.level, 0), 2)
+
+
 @dataclass
 class LoginResult:
     failed: bool
@@ -155,7 +163,7 @@ def login_result(ctx: Ctx, status: int, state: State, config: Config) -> LoginRe
     state.add(ctx.client, signals.LOGIN_FAILED)
     delay = min(config.login.backoff_step_s * failures, config.login.backoff_max_s)
     trip = None
-    if failures >= config.login.max_failures:
+    if failures >= max_failures(state, config):
         state.add(ctx.client, signals.ATTACK)
         trip = Stop(5, status, "trapped", "brute-force", category="bruteforce", trap=True)
     return LoginResult(failed=True, failures=failures, delay=delay, trip=trip)

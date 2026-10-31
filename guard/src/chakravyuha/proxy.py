@@ -22,6 +22,7 @@ from starlette.routing import Route
 
 from . import challenge, rings
 from . import state as signals
+from .agents import Agents
 from .challenge import Challenger
 from .config import Config, Service
 from .decoy import Decoy
@@ -83,6 +84,7 @@ class Guard:
         wallclock: Callable[[], float] = time.time,
         decoy: Decoy | None = None,
         shipper: Shipper | None = None,
+        llm=None,
     ) -> None:
         self.config = config
         self.token = token
@@ -103,6 +105,8 @@ class Guard:
         if self.shipper:
             self.bus.listeners.append(self.shipper.put)
         self.source = EventSource(self.bus, config.elk)
+        self.ip_campaign: dict[str, str] = {}  # ip -> the Scout's campaign id
+        self.agents = Agents(self, llm=llm)
         tokens_file = config.data_dir / "honeytokens.jsonl" if config.data_dir else None
         self.honeytokens = Honeytokens(self.secret, tokens_file)
         self.decoy.fill = self.honeytokens.fill
@@ -137,6 +141,8 @@ class Guard:
             fields.setdefault("user.name", ctx.username)
         if ctx.password_fp is not None:
             fields.setdefault("hedwig.password_fp", ctx.password_fp)
+        if campaign := self.ip_campaign.get(ctx.ip):
+            fields.setdefault("campaign", campaign)
         if user_agent := ctx.headers.get("user-agent"):
             fields.setdefault("user_agent.original", user_agent[:200])
         script = not user_agent or bool(rings.SCRIPT_UA.search(user_agent))
@@ -200,7 +206,39 @@ class Guard:
         return True
 
     def trap_threshold(self, ctx: rings.Ctx) -> float:
-        return self.config.suspicion.trap
+        return self.trap_threshold_for(ctx.ip)
+
+    def trap_threshold_for(self, ip: str) -> float:
+        """10 when calm; the Commander lowers it to 8 at alert and 6 at siege."""
+        return max(self.config.suspicion.trap - rings.LEVEL_TIGHTEN.get(self.state.level, 0), 3)
+
+    def throttle(self, username: str, minutes: float) -> bool:
+        """Per-username login throttle ordered by the Scout. True if newly throttled."""
+        new = not self.throttled(username)
+        self.state.throttled[username] = self.state.now() + min(minutes, 60) * 60
+        return new
+
+    def throttled(self, username: str) -> bool:
+        expiry = self.state.throttled.get(username)
+        return expiry is not None and expiry > self.state.now()
+
+    def alarm_age_s(self) -> float:
+        if not self.alarms:
+            return float("inf")
+        stamp = datetime.fromisoformat(self.alarms[-1]["@timestamp"])
+        return (datetime.now(UTC) - stamp).total_seconds()
+
+    def username_throttle(self, ctx: rings.Ctx, state: State, config: Config):
+        """Ring 5, on the Scout's order: one login attempt per interval for a throttled name."""
+        user = ctx.username
+        if not ctx.is_login or not user or not self.throttled(user) or state.allowlisted(ctx.ip):
+            return None
+        now, last = state.now(), state.user_last_login.get(user)
+        if last is not None and now - last < config.agents.throttle_interval_s:
+            return rings.Stop(5, 429, "blocked", "username-throttle", category="bruteforce",
+                              body="Too Many Requests")  # fmt: skip
+        state.user_last_login[user] = now
+        return None
 
     def run_ring(self, number: int, ring: Callable, ctx: rings.Ctx) -> Response | None:
         try:
@@ -307,6 +345,8 @@ class Guard:
             rings.login_credentials(ctx, self.secret)
         except Exception as error:
             self.guard_error(ctx, 5, error)
+        if response := self.run_ring(5, self.username_throttle, ctx):
+            return response
 
         self.trap_if_suspicious(ctx)
         if ctx.trapped or self.state.trapped(ctx.ip):
@@ -566,18 +606,22 @@ class Guard:
     async def aclose(self) -> None:
         await self.upstream.aclose()
         await self.source.aclose()
+        await self.agents.llm.aclose()
         if self.shipper:
             self.shipper.close()
         self.bus.close()
 
-    async def watch(self, every_s: float = 5.0) -> None:
-        """Background loop: keep the ELK status fresh for the dashboard (agents join in C10)."""
+    async def watch(self) -> None:
+        """Background loop: the agents' turn every few seconds, never in the request path."""
         while True:
             try:
-                await self.source.ping()
-            except Exception as error:  # the watch must never die
-                print(f"chakravyuha: watch failed: {error}")
-            await asyncio.sleep(every_s)
+                if self.config.agents.enabled:
+                    await self.agents.tick()
+                else:
+                    await self.source.ping()
+            except Exception as error:  # the loop must never die
+                print(f"chakravyuha: agents failed: {type(error).__name__}: {error}")
+            await asyncio.sleep(self.config.agents.interval_s)
 
 
 def create_app(config: Config, **kwargs) -> Starlette:

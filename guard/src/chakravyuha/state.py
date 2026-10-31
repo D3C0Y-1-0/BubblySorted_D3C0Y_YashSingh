@@ -51,6 +51,8 @@ class State:
         self.bans: dict[str, float] = {}  # ip -> expiry (clock time)
         self.traps: dict[str, float] = {}
         self.level = "calm"
+        self.throttled: dict[str, float] = {}  # username -> expiry (ordered by the Scout)
+        self.user_last_login: dict[str, float] = {}
         self.in_flight = 0
         self.tarpitted = 0
 

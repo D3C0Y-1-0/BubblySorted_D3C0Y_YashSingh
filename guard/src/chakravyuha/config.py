@@ -46,6 +46,26 @@ class Login(BaseModel):
     backoff_max_s: float = 3.0
 
 
+class Agents(BaseModel):
+    enabled: bool = True
+    interval_s: float = 5  # the agents' loop
+    window_s: float = 60  # how far back the Scout looks
+    distributed_failures: int = 30  # rule A: failures on one username ...
+    distributed_ips: int = 10  # ... from this many IPs
+    spray_usernames: int = 15  # rule B: one password against this many usernames ...
+    spray_ips: int = 3  # ... from this many IPs
+    campaign_trap_minutes: float = 30
+    throttle_minutes: float = 10
+    throttle_interval_s: float = 5  # a throttled username gets one login attempt per interval
+    active_s: float = 120  # a campaign is active until it has been quiet this long
+    alert_traps: int = 3
+    siege_traps: int = 20
+    alarm_siege_s: float = 600  # a honeytoken alarm keeps the level at siege this long
+    step_down_s: float = 120  # quiet time before the level steps down one notch
+    rotate_minutes: float = 10  # honeytoken rotation
+    ai_every_s: float = 15  # at most one model call per interval unless a campaign is new
+
+
 class Elk(BaseModel):
     """ELK connection settings. CHAKRA_LOGSTASH, CHAKRA_ELASTIC_URL and CHAKRA_KIBANA_URL win."""
 
@@ -80,6 +100,7 @@ class Config(BaseModel):
     flood: Flood = Flood()
     login: Login = Login()
     elk: Elk = Elk()
+    agents: Agents = Agents()
     services: dict[str, Service] = Field(default_factory=dict)
     data_dir: Path | None = GUARD_ROOT / "data"
     bank_root: Path | None = GUARD_ROOT / "bank"  # where ring 6 appends to service access logs

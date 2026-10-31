@@ -10,6 +10,7 @@ from starlette.routing import Route
 from chakravyuha.challenge import COOKIE
 from chakravyuha.config import Config
 from chakravyuha.decoy import Decoy, default_dataset
+from chakravyuha.llm import LLM
 from chakravyuha.proxy import create_app
 from chakravyuha.state import State
 
@@ -100,6 +101,7 @@ def make_guard():
             state=State(config, clock=clock),
             sleep=sleeps,
             decoy=Decoy(config, dataset=default_dataset(), rng=random.Random(4)),
+            llm=LLM(api_key=""),  # agents run their rules; tests that need a model pass one
         )
         guard = app.state.guard
 
