@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "canvas": "^3.2.3"
+  },
+  "allowScripts": {
+    "canvas@3.2.3": true
+  }
+}

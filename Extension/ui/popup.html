@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Hedwig Shield</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header -->
+  <header id="header">
+    <div id="brand">
+      <span id="owl-icon">🦉</span>
+      <div id="brand-text">
+        <span id="brand-name">HEDWIG SHIELD</span>
+        <span id="brand-sub">threat early warning</span>
+      </div>
+    </div>
+    <label id="toggle-label" title="Toggle protection">
+      <input type="checkbox" id="protection-toggle" checked>
+      <span id="toggle-track"><span id="toggle-thumb"></span></span>
+    </label>
+  </header>
+
+  <!-- Risk display panel -->
+  <section id="risk-panel">
+    <div id="risk-score-ring">
+      <svg id="score-svg" viewBox="0 0 100 100">
+        <circle id="score-track" cx="50" cy="50" r="40" />
+        <circle id="score-fill"  cx="50" cy="50" r="40" />
+      </svg>
+      <div id="score-center">
+        <span id="score-number">--</span>
+        <span id="score-label">Checking...</span>
+      </div>
+    </div>
+    <div id="risk-info">
+      <div id="risk-level" class="risk-low">Safe</div>
+      <div id="risk-url" title=""></div>
+      <div id="risk-assessed"></div>
+    </div>
+  </section>
+
+  <!-- Deterministic signals list -->
+  <section id="signals-section" class="hidden">
+    <h3 class="section-title">Detected Signals</h3>
+    <ul id="signals-list"></ul>
+  </section>
+
+
+
+  <!-- Divider -->
+  <hr class="divider">
+
+  <!-- Recent history -->
+  <section id="history-section">
+    <div class="section-header">
+      <h3 class="section-title">Recent Detections</h3>
+      <button id="clear-history-btn" class="text-btn">Clear</button>
+    </div>
+    <ul id="history-list">
+      <li class="empty-state">No detections yet</li>
+    </ul>
+  </section>
+
+  <!-- Footer -->
+  <footer id="popup-footer">
+    <div id="footer-info">Hedwig Shield v1.0.0</div>
+    <button id="open-settings-btn" class="text-btn">Settings</button>
+  </footer>
+
+  <!-- Settings panel (hidden by default) -->
+  <section id="settings-panel" class="hidden">
+
+    <h3 class="section-title">Protection Settings</h3>
+    <div class="setting-row">
+      <label for="warning-threshold">Warning threshold (score)</label>
+      <input type="number" id="warning-threshold" min="10" max="90" value="60">
+    </div>
+    <div class="setting-row">
+      <label for="block-threshold">Block threshold (score)</label>
+      <input type="number" id="block-threshold" min="50" max="100" value="85">
+    </div>
+    <div class="setting-row">
+      <label for="history-limit">History limit</label>
+      <input type="number" id="history-limit" min="5" max="200" value="50">
+    </div>
+
+    <!-- Analysis Configuration sub-section -->
+    <div class="settings-divider"></div>
+    <h3 class="section-title">Analysis Configuration</h3>
+
+    <div class="setting-row">
+      <label for="ai-enabled-toggle">Enable advanced analysis</label>
+      <label class="mini-toggle">
+        <input type="checkbox" id="ai-enabled-toggle">
+        <span class="mini-track"><span class="mini-thumb"></span></span>
+      </label>
+    </div>
+
+    <div class="setting-row ai-key-row">
+      <label for="ai-api-key">API Key</label>
+      <div class="key-input-wrap">
+        <input type="password" id="ai-api-key" placeholder="Enter API key" autocomplete="off" spellcheck="false">
+        <button id="show-key-btn" class="icon-btn" title="Show/hide key">👁</button>
+      </div>
+    </div>
+
+    <div id="ai-key-status-row" class="setting-row ai-key-status-row hidden">
+      <span id="ai-key-status-label"></span>
+      <button id="clear-key-btn" class="text-btn text-btn-danger">Clear Key</button>
+    </div>
+
+    <div class="setting-row">
+      <label for="ai-model-input">Analysis Model</label>
+      <select id="ai-model-input" class="setting-select">
+        <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (Default)</option>
+        <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+        <option value="llama3-70b-8192">llama3-70b-8192</option>
+        <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+        <option value="gemma2-9b-it">gemma2-9b-it</option>
+      </select>
+    </div>
+
+    <div id="ai-connection-status" class="ai-conn-status hidden"></div>
+
+    <div class="ai-settings-actions">
+      <button id="test-connection-btn" class="secondary-btn">Verify Configuration</button>
+      <button id="save-ai-key-btn" class="primary-btn">Save Key</button>
+    </div>
+
+    <div class="settings-footer-actions">
+      <button id="save-settings-btn" class="primary-btn">Save Settings</button>
+      <button id="cancel-settings-btn" class="text-btn">Cancel</button>
+    </div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<!--
+  generate-icons.html — Open this file in Chrome (File > Open) to generate
+  Hedwig Shield's PNG icons. Click the download buttons to save each size.
+  Place the downloaded files in Extension/assets/icons/.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hedwig Shield — Icon Generator</title>
+<style>
+  body { background: #111; color: #eee; font-family: monospace; padding: 24px; }
+  canvas { border: 1px solid #333; margin: 8px; }
+  button { margin: 4px; padding: 6px 14px; background: #f5bd2a; color: #111; border: none; cursor: pointer; font-weight: bold; }
+  .row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<h2>Hedwig Shield Icon Generator</h2>
+<p>Generates PNG icons from the SVG design. Open in Chrome, then download each size.</p>
+
+<div id="output"></div>
+
+<script>
+const SIZES = [16, 32, 48, 128];
+
+function drawIcon(ctx, size) {
+  const s = size;
+  // Background circle — dark charcoal
+  ctx.clearRect(0, 0, s, s);
+
+  // Shield shape
+  const cx = s / 2, cy = s / 2;
+  const sw = s * 0.75, sh = s * 0.85;
+  const sx = cx - sw / 2, sy = cy - sh / 2;
+
+  ctx.beginPath();
+  // Top-left, top-right, bottom point
+  ctx.moveTo(cx, sy);
+  ctx.lineTo(sx + sw, sy + sh * 0.25);
+  ctx.quadraticCurveTo(sx + sw, sy + sh * 0.75, cx, sy + sh);
+  ctx.quadraticCurveTo(sx, sy + sh * 0.75, sx, sy + sh * 0.25);
+  ctx.closePath();
+
+  // Shield fill — very dark
+  ctx.fillStyle = "#1a1612";
+  ctx.fill();
+  // Shield stroke — golden
+  ctx.strokeStyle = "#f5bd2a";
+  ctx.lineWidth = size <= 16 ? 1.5 : size <= 32 ? 2 : 3;
+  ctx.stroke();
+
+  // Owl eyes (two circles)
+  if (size >= 32) {
+    const eyeR = s * 0.085;
+    const eyeY = cy - s * 0.06;
+    const eyeX = s * 0.13;
+    // Left eye
+    ctx.beginPath();
+    ctx.arc(cx - eyeX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fillStyle = "#f5bd2a";
+    ctx.fill();
+    // Right eye
+    ctx.beginPath();
+    ctx.arc(cx + eyeX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fillStyle = "#f5bd2a";
+    ctx.fill();
+    // Pupils
+    ctx.beginPath();
+    ctx.arc(cx - eyeX, eyeY, eyeR * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#0d0d0d";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + eyeX, eyeY, eyeR * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#0d0d0d";
+    ctx.fill();
+
+    // Beak
+    ctx.beginPath();
+    ctx.moveTo(cx, eyeY + eyeR * 1.2);
+    ctx.lineTo(cx - eyeR * 0.6, eyeY + eyeR * 2.2);
+    ctx.lineTo(cx + eyeR * 0.6, eyeY + eyeR * 2.2);
+    ctx.closePath();
+    ctx.fillStyle = "#f5bd2a";
+    ctx.fill();
+  } else {
+    // 16px: just a simple H letter
+    ctx.fillStyle = "#f5bd2a";
+    ctx.font = `bold ${size * 0.55}px monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("H", cx, cy + s * 0.04);
+  }
+}
+
+const output = document.getElementById("output");
+
+SIZES.forEach(size => {
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  drawIcon(ctx, size);
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const label = document.createElement("span");
+  label.textContent = `${size}×${size}`;
+
+  const btn = document.createElement("button");
+  btn.textContent = `Download icon${size}.png`;
+  btn.addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.download = `icon${size}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  });
+
+  row.appendChild(canvas);
+  row.appendChild(label);
+  row.appendChild(btn);
+  output.appendChild(row);
+});
+</script>
+</body>
+</html>
+
