@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hedwig Demo Bank</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Hedwig Demo Bank</h1>
+  <p class="note">A demo bank with fake customers and fake money.</p>
+</header>
+<main>
+  <section class="tiles" id="tiles">
+    <article class="tile" data-service="transaction"><h2>Payments</h2><p>Balance and transfers</p><b class="state">checking…</b></article>
+    <article class="tile" data-service="account"><h2>Accounts</h2><p>Profile and statements</p><b class="state">checking…</b></article>
+    <article class="tile" data-service="support"><h2>Support</h2><p>Tickets and help</p><b class="state">checking…</b></article>
+    <article class="tile" data-service="notifications"><h2>Notifications</h2><p>Offers and alerts</p><b class="state">checking…</b></article>
+  </section>
+
+  <section class="panel" id="login-panel">
+    <h2>Sign in</h2>
+    <form id="login">
+      <label>Username <input name="username" autocomplete="username" value="demo"></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+      <button type="submit">Sign in</button>
+      <span id="login-msg" role="status"></span>
+    </form>
+  </section>
+
+  <section class="panel hidden" id="account-panel">
+    <h2>Your account</h2>
+    <p id="balance">…</p>
+    <ul id="history"></ul>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Hedwig Chakravyuha local stack. Everything is published on 127.0.0.1 only; the Guard itself
+# runs natively on the laptop (`uv run --project guard chakravyuha`), see chakravyuhaPLAN.md.
+name: chakravyuha
+
+services:
+  web:
+    build: ../bank/web
+    ports: ["127.0.0.1:9100:8080"]
+    restart: unless-stopped
+
+  transaction:
+    build: ../bank/transaction
+    ports: ["127.0.0.1:9101:8080"]
+    volumes: ["../bank/transaction/logs:/app/logs"]
+    restart: unless-stopped

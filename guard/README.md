@@ -7,10 +7,14 @@ This is a secondary track. Everything for it lives in this folder: code, tests, 
 files and the demo bank. It does not edit anything outside `guard/`.
 
 ```sh
-uv run --project guard chakravyuha            # Guard on :8080, dashboard on 127.0.0.1:8090
-uv run --project guard python guard/tools/stub_bank.py   # stand-in bank on :9001 until B1
+docker compose -f guard/deploy/docker-compose.yml up -d --build   # the bank, on 127.0.0.1:91xx
+uv run --project guard chakravyuha            # Guard on 127.0.0.1:8080, dashboard on :8090
 uv run --project guard pytest guard/tests     # tests
 ```
+
+Open `http://127.0.0.1:8080` in a browser (demo user `demo` / `demo-pass`). The bank lives in
+`guard/bank/` (`hedwig scan guard/bank` works on it); `guard/tools/stub_bank.py` is a tiny
+stand-in on :9001 for working on the Guard without Docker.
 
 Everything runs on one machine and listens on `127.0.0.1` only. The browser on the laptop is
 the real user (`127.0.0.1`, allowlisted); attack scripts send from `127.0.0.2` and up.

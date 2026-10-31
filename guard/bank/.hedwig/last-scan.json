@@ -1,0 +1,513 @@
+{
+  "root": "C:\\Users\\aniru\\Desktop\\Projects\\Hedwig\\guard\\bank",
+  "offline": false,
+  "generated_at": "2026-10-31T17:13:37.104843+00:00",
+  "packages": 3,
+  "raw_advisories": 9,
+  "kev_available": true,
+  "services": [
+    {
+      "name": "transaction",
+      "tier": "medium",
+      "packages": 3
+    }
+  ],
+  "findings": [
+    {
+      "id": "CVE-2021-44228",
+      "ids": [
+        "GHSA-jfh8-c2jp-5v3q",
+        "CVE-2021-44228"
+      ],
+      "cves": [
+        "CVE-2021-44228"
+      ],
+      "summary": "Remote code injection in Log4j",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.15.0",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": true,
+      "epss": 0.99999,
+      "evidence_level": 2,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 1.0,
+        "criticality": 0.5,
+        "confidence": 0.9
+      },
+      "risk": 0.45,
+      "severity": "critical",
+      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, low complexity, no privileges needed, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.15.0; bump the package to 2.25.4."
+    },
+    {
+      "id": "CVE-2021-45046",
+      "ids": [
+        "GHSA-7rjr-3q55-vv33",
+        "CVE-2021-45046"
+      ],
+      "cves": [
+        "CVE-2021-45046"
+      ],
+      "summary": "Incomplete fix for Apache Log4j vulnerability",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.16.0",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": true,
+      "epss": 0.99977,
+      "evidence_level": 2,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 1.0,
+        "criticality": 0.5,
+        "confidence": 0.9
+      },
+      "risk": 0.45,
+      "severity": "critical",
+      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.16.0; bump the package to 2.25.4."
+    },
+    {
+      "id": "CVE-2021-44832",
+      "ids": [
+        "GHSA-8489-44mv-ggj8",
+        "CVE-2021-44832"
+      ],
+      "cves": [
+        "CVE-2021-44832"
+      ],
+      "summary": "Improper Input Validation and Injection in Apache Log4j2",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.17.1",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.97906,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 0.979,
+        "impact": 0.971,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.38,
+      "severity": "high",
+      "reasoning": "High because: high exploitation probability (EPSS 98%), network-exploitable, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.17.1; bump the package to 2.25.4."
+    },
+    {
+      "id": "CVE-2021-45105",
+      "ids": [
+        "GHSA-p6xc-xr62-6r2g",
+        "CVE-2021-45105"
+      ],
+      "cves": [
+        "CVE-2021-45105"
+      ],
+      "summary": "Apache Log4j2 vulnerable to Improper Input Validation and Uncontrolled Recursion",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.17.0",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.99999,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 0.66,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.264,
+      "severity": "high",
+      "reasoning": "High because: high exploitation probability (EPSS 100%), network-exploitable, low complexity, no privileges needed, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.17.0; bump the package to 2.25.4."
+    },
+    {
+      "id": "CVE-2025-68161",
+      "ids": [
+        "GHSA-vc5p-v9hr-52mj",
+        "CVE-2025-68161"
+      ],
+      "cves": [
+        "CVE-2025-68161"
+      ],
+      "summary": "Apache Log4j does not verify the TLS hostname in its Socket Appender",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.25.3",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.00767,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 0.571,
+        "impact": 0.233,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.053,
+      "severity": "low",
+      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.3; bump the package to 2.25.4."
+    },
+    {
+      "id": "CVE-2026-34477",
+      "ids": [
+        "GHSA-6hg6-v5c8-fphq",
+        "CVE-2026-34477"
+      ],
+      "cves": [
+        "CVE-2026-34477"
+      ],
+      "summary": "Apache Log4j Core: `verifyHostName` attribute silently ignored in TLS configuration",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.25.4",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.0056,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 0.571,
+        "impact": 0.233,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.053,
+      "severity": "low",
+      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+    },
+    {
+      "id": "CVE-2026-34479",
+      "ids": [
+        "GHSA-h383-gmxw-35v2",
+        "CVE-2026-34479"
+      ],
+      "cves": [
+        "CVE-2026-34479"
+      ],
+      "summary": "Apache Log4j 1 to Log4j 2 bridge: silent log event loss in Log4j1XmlLayout due to unescaped XML 1.0 forbidden characters",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.25.4",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.00535,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 0.0,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.0,
+      "severity": "low",
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+    },
+    {
+      "id": "CVE-2026-34480",
+      "ids": [
+        "GHSA-3pxv-7cmr-fjr4",
+        "CVE-2026-34480"
+      ],
+      "cves": [
+        "CVE-2026-34480"
+      ],
+      "summary": "Apache Log4j Core: Silent log event loss in XmlLayout due to unescaped XML 1.0 forbidden characters",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.25.4",
+      "package_fix": "2.25.4",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.01046,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 0.0,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.0,
+      "severity": "low",
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+    },
+    {
+      "id": "CVE-2026-49844",
+      "ids": [
+        "GHSA-qv9r-c865-cp47",
+        "CVE-2026-49844"
+      ],
+      "cves": [
+        "CVE-2026-49844"
+      ],
+      "summary": "Apache Log4j API: Improper encoding of non-finite floating-point values during MapMessage JSON serialization",
+      "service": "transaction",
+      "tier": "medium",
+      "ecosystem": "Maven",
+      "package": "org.apache.logging.log4j:log4j-api",
+      "version": "2.14.1",
+      "manifest": "pom.xml",
+      "fixed_version": "2.25.5",
+      "package_fix": "2.25.5",
+      "needs_major": false,
+      "kev": false,
+      "epss": 0.00595,
+      "evidence_level": 1,
+      "reachability": "called",
+      "call_sites": [
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 26,
+          "function": "<module>",
+          "symbol": "LogManager.getLogger"
+        },
+        {
+          "file": "src/main/java/bank/transaction/App.java",
+          "line": 47,
+          "function": "main",
+          "symbol": "Logger.info"
+        }
+      ],
+      "attacks": [],
+      "compromise": false,
+      "decision": {
+        "action": "fix",
+        "reason": "open a minimal fix, then verify it",
+        "on_verified": "review_pr",
+        "on_failed": "failed_pr"
+      },
+      "factors": {
+        "exploitability": 1.0,
+        "impact": 0.0,
+        "criticality": 0.5,
+        "confidence": 0.8
+      },
+      "risk": 0.0,
+      "severity": "low",
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.5."
+    }
+  ],
+  "warnings": []
+}

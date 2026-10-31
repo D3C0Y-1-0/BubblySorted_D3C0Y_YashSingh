@@ -1,4 +1,5 @@
 # Hedwig Chakravyuha settings. Everything has a safe default; see chakravyuhaPLAN.md.
+# Upstreams are the Compose ports in deploy/docker-compose.yml, all on 127.0.0.1.
 mode: block                     # block | monitor
 allowlist: [127.0.0.1]          # the demo browser: never trapped or banned (still challenged)
 trap_minutes: 30                # max 60
@@ -10,8 +11,17 @@ challenge:
   difficulty: 18                # proof-of-work bits; +4 at hard_challenge, +2/+4 at alert/siege
   session_minutes: 30           # a third of this for clients at hard_challenge
 services:
+  web:
+    upstream: http://127.0.0.1:9100
+    prefix: /
+    routes:
+      - GET /
+      - GET /index.html
+      - GET /app.js
+      - GET /style.css
+      - GET /health
   transaction:
-    upstream: http://127.0.0.1:9001
+    upstream: http://127.0.0.1:9101
     rate: 20
     login_paths: [/login]
     routes:
@@ -19,7 +29,7 @@ services:
       - GET /health
       - POST /login
       - GET /balance
+      - GET /transactions
       - POST /transfer
-    challenge: true
     redirect_hosts: []
     uploads: false

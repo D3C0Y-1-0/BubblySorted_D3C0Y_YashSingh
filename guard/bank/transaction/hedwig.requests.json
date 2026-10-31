@@ -1,0 +1,6 @@
+[
+  { "method": "GET", "path": "/health" },
+  { "method": "GET", "path": "/balance" },
+  { "method": "GET", "path": "/transactions" },
+  { "method": "POST", "path": "/login", "body": { "username": "demo", "password": "wrong" } }
+]
