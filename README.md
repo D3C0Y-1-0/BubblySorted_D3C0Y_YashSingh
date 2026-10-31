@@ -50,19 +50,20 @@ This opens the Hedwig app. Type `/` to see the commands:
 | `/status` | Findings per service in this folder |
 | `/explain <id>` | Reasoning, score factors and the recommended fix for one finding |
 | `/simulate-attack <service>` | Write an attack request to the service's log. Add `--compromise` for a sign of compromise |
-| `/fix <service>` | Fix the service's vulnerable packages: bump, adapt the code, verify, then do what `.hedwig.yml` allows. Add `--package NAME`, `--dry-run` |
+| `/fix <service>` | Fix the service's vulnerable packages: bump, adapt the code, verify, push the branch and open a PR on GitHub (a draft when verification failed or could not run), then do what `.hedwig.yml` allows. Add `--package NAME`, `--dry-run`, `--no-pr`, `--no-email` |
+| `/down <service>`, `/up <service>` | Stop and start one service of the local Docker Compose bank (`docker compose stop` / `start`) |
 | `/report <service\|run-id>` | PDF report for the project manager. Add `--email` |
 | `/dash` | Terminal dashboard: the service architecture with live Docker status, alerts with expandable call sites, a reports table and the Guard's attack reports. Keys: `f` fix, `t` take down, `u` start, `a` approve, `e`/`c` expand/collapse, `1` `2` `3` tabs, `/` filter, `?` help |
 | `/config` | Store your Groq API key (saved to `~/.hedwig/config.toml`). Also `/config show` and `/config set <key> <value>` |
 | `/doctor` | Check git, docker, npm, cargo, composer, mvn, tectonic |
 | `/clear`, `/help`, `/exit` | Clear the screen, list commands, leave |
 
-Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig simulate-attack <service>`, `hedwig fix <service>`, `hedwig report <target>`, `hedwig dash`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
+Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig simulate-attack <service>`, `hedwig fix <service>`, `hedwig down <service>`, `hedwig up <service>`, `hedwig report <target>`, `hedwig dash`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
 `init` always works on the folder you run it from.
 
 ### Fixing and reporting
 
-`fix` needs a Groq key (`/config`), `git`, and for the old-vs-new comparison `docker`. It works in
+`fix` needs a Groq key (`/config`), `git`, and for the old-vs-new comparison `docker`. To open the pull request it needs the GitHub CLI (`gh auth login`) and a GitHub `origin`; without them the fix stays on a local branch. It works in
 git worktrees under `.hedwig/work/`, never in your working copy, and writes everything to
 `.hedwig/runs/<run-id>/` (`diff.patch`, `cases.json`, `verdict.json`, `review.json`, `pr.md`).
 Every agent call and decision goes to `.hedwig/audit.jsonl`. `report` builds the PDF with `tectonic`, which Hedwig downloads once into `~/.hedwig/bin` on first

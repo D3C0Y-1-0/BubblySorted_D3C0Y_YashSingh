@@ -108,6 +108,8 @@ class Run(BaseModel):
     to_version: str | None
     advisories: list[str]
     branch: str = ""
+    pr_url: str = ""  # the pull request opened for this fix, if any
+    verification: str = ""  # passed | failed | unavailable
     state: str = "running"  # running | verified | failed | skipped
     action: str = ""  # merged | review_pr | failed_pr | takedown | notify | none
     decision: Decision | None = None

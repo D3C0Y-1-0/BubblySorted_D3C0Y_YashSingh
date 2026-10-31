@@ -51,10 +51,16 @@ def _lead(group: list[Finding]) -> Finding:
 
 
 def fix(
-    service: Annotated[str, typer.Argument(help="Service (folder) to fix.")],
+    service: Annotated[
+        str | None,
+        typer.Argument(help="Service (folder) to fix. Optional when there is only one."),
+    ] = None,
     package: Annotated[str | None, typer.Option("--package", help="Only this package.")] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print the plan and decision. Change nothing.")
+    ] = False,
+    no_pr: Annotated[
+        bool, typer.Option("--no-pr", help="Keep the fix on a local branch; open no pull request.")
     ] = False,
     no_email: Annotated[
         bool, typer.Option("--no-email", help="Do not email the PM report afterwards.")
@@ -67,10 +73,12 @@ def fix(
     """Fix every vulnerable package of a service: bump, adapt, verify, then act as policy says."""
     root = Path.cwd()
     specs = {spec.name: spec for spec in engine.resolve_services(root, tier)}
+    if service is None and len(specs) == 1:
+        service = next(iter(specs))
     if service not in specs:
-        raise scan_cmd._fail(
-            f"No service '{service}' here. Services: {', '.join(specs) or 'none'}.", 1
-        )
+        listed = ", ".join(specs) or "none"
+        message = f"No service '{service}' here." if service else "Name the service to fix."
+        raise scan_cmd._fail(f"{message} Services: {listed}.", 1)
     result = scan_cmd._scan(".", offline, advisories, tier)
     groups = _groups(result, service, package)
     if not groups:
@@ -90,7 +98,9 @@ def fix(
         )
         try:
             runs.append(
-                orchestrator.run_fix(root, group, specs[service], source, on_step=_print_step)
+                orchestrator.run_fix(
+                    root, group, specs[service], source, on_step=_print_step, publish=not no_pr
+                )
             )
         except Exception as err:  # one package failing must not stop the others
             console.print(f"[red]{type(err).__name__}: {err}[/red]")
@@ -99,7 +109,7 @@ def fix(
         scan_cmd._print_json(json.dumps([r.model_dump() for r in runs], indent=2))
         return
     table = Table(title=f"Hedwig fix: {service}")
-    for column in ("package", "from → to", "state", "outcome", "run"):
+    for column in ("package", "from → to", "state", "outcome", "pull request"):
         table.add_column(column, overflow="fold")
     for r in runs:
         style = {"verified": "green", "failed": "red"}.get(r.state, "yellow")
@@ -108,11 +118,11 @@ def fix(
             f"{r.from_version} → {r.to_version or '-'}",
             f"[{style}]{r.state}[/{style}]",
             r.action,
-            r.run_id,
+            r.pr_url or "-",
         )
     console.print(table)
     for r in runs:
-        if r.branch and r.action != "merged":
+        if r.branch and r.action != "merged" and not r.pr_url:
             console.print(
                 f"[bold]{r.package}[/bold]: the change is only on branch [bold]{r.branch}[/bold], "
                 f"not in your files. Review: git diff HEAD...{r.branch}   "
@@ -192,7 +202,7 @@ def dash(offline: Offline = False, advisories: Advisories = None, tier: Tier = "
 
 APP_USAGE = {
     "fix": (
-        "/fix <service> [--package NAME] [--dry-run] [--no-email] "
+        "/fix [service] [--package NAME] [--dry-run] [--no-pr] [--no-email] "
         "[--offline] [--advisories DIR] [--json]"
     ),
     "report": "/report <service|run-id> [--email]",
@@ -204,14 +214,24 @@ _FLAGS = {
     "--json": "json_output",
     "--email": "email",
     "--no-email": "no_email",
+    "--no-pr": "no_pr",
 }
 _VALUES = {"--package": "package", "--advisories": "advisories", "--tier": "tier"}
 _ALLOWED = {
-    "fix": {"package", "dry_run", "no_email", "offline", "advisories", "tier", "json_output"},
+    "fix": {
+        "package",
+        "dry_run",
+        "no_pr",
+        "no_email",
+        "offline",
+        "advisories",
+        "tier",
+        "json_output",
+    },
     "report": {"email", "offline", "advisories", "tier"},
     "dash": {"offline", "advisories", "tier"},
 }
-_POSITIONALS = {"fix": 1, "report": 1, "dash": 0}
+_POSITIONALS = {"fix": (0, 1), "report": (1, 1), "dash": (0, 0)}
 
 
 def run_in_app(name: str, args: list[str], root: Path) -> None:
@@ -233,12 +253,13 @@ def run_in_app(name: str, args: list[str], root: Path) -> None:
             return
         else:
             positional.append(item)
-    if set(options) - _ALLOWED[name] or len(positional) != _POSITIONALS[name]:
+    low, high = _POSITIONALS[name]
+    if set(options) - _ALLOWED[name] or not low <= len(positional) <= high:
         console.print(f"Usage: {APP_USAGE[name]}")
         return
     try:
         if name == "fix":
-            fix(positional[0], **options)
+            fix(positional[0] if positional else None, **options)
         elif name == "report":
             report_cmd(positional[0], **options)
         else:

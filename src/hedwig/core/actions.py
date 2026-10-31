@@ -66,6 +66,14 @@ def resume(root: Path, service: str) -> str:
     return note
 
 
+def clear_down(root: Path, service: str) -> None:
+    """The service is up again (a rebuild started it): drop its down record."""
+    state = load_state(root)
+    if state.setdefault("down", {}).pop(service, None) is not None:
+        _save_state(root, state)
+        audit.record(root, "action", action="up", service=service)
+
+
 def is_down(root: Path, service: str) -> bool:
     return service in load_state(root).get("down", {})
 

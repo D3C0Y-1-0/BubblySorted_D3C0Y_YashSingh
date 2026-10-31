@@ -7,7 +7,10 @@ root. A Hedwig service maps to the compose service of the same name, or `compose
 import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
+
+import httpx
 
 from hedwig import config
 
@@ -110,3 +113,59 @@ def start(root: Path, service: str) -> None:
     done = _run(root, ["start", compose_name(root, service)], START_TIMEOUT)
     if done.returncode != 0:
         raise DeployError(done.stderr.strip()[-300:] or "docker compose start failed")
+
+
+BUILD_TIMEOUT = 900
+SMOKE_WAIT = 60
+SETTLE_SECONDS = 3
+
+
+def rebuild(root: Path, service: str) -> None:
+    """Rebuild one service's image and restart only that service."""
+    name = compose_name(root, service)
+    built = _run(root, ["build", name], BUILD_TIMEOUT)
+    if built.returncode != 0:
+        raise DeployError(f"build failed: {(built.stderr or built.stdout).strip()[-400:]}")
+    up = _run(root, ["up", "-d", "--no-deps", name], START_TIMEOUT)
+    if up.returncode != 0:
+        raise DeployError(f"up failed: {up.stderr.strip()[-300:]}")
+
+
+def published_url(root: Path, service: str) -> str | None:
+    """http://127.0.0.1:<port> of the service's published port, if it publishes one."""
+    done = _run(root, ["ps", "-a", "--format", "json", compose_name(root, service)], TIMEOUT)
+    for row in _rows(done.stdout):
+        for pub in row.get("Publishers") or []:
+            if pub.get("PublishedPort"):
+                return f"http://{pub.get('URL') or '127.0.0.1'}:{pub['PublishedPort']}"
+    return None
+
+
+def smoke(root: Path, service: str, health_path: str = "/health") -> tuple[bool, str]:
+    """Is the service really up? Running, answering its health path, still running after a pause.
+
+    The health path is asked on the published 127.0.0.1 port, not through the Guard, whose
+    proof-of-work challenge would turn the check away.
+    """
+    try:
+        url = published_url(root, service)
+    except DeployError as err:
+        return False, str(err)
+    deadline = time.monotonic() + SMOKE_WAIT
+    while True:
+        running = status(root, [service])[service] in ("active", "starting")
+        if running and url:
+            try:
+                if httpx.get(url + health_path, timeout=3).status_code < 500:
+                    break
+            except httpx.HTTPError:
+                pass
+        elif running and not url:
+            break
+        if time.monotonic() > deadline:
+            return False, f"{service} did not become healthy within {SMOKE_WAIT} s"
+        time.sleep(1)
+    time.sleep(SETTLE_SECONDS)
+    if status(root, [service])[service] != "active":
+        return False, f"{service} stopped again right after starting"
+    return True, f"{service} healthy" + (f" at {url}{health_path}" if url else " (running)")

@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 from hedwig import __version__
-from hedwig.cli import commands, fix_cmd, scan_cmd
+from hedwig.cli import commands, deploy_cmd, fix_cmd, scan_cmd
 from hedwig.ui.mascot import banner
 
 console = Console()
@@ -25,6 +25,7 @@ config_app = typer.Typer(
 app.add_typer(config_app, name="config")
 scan_cmd.register(app)
 fix_cmd.register(app)
+deploy_cmd.register(app)
 
 
 def _version_callback(value: bool) -> None:

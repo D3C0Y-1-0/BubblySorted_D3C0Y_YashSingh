@@ -4,6 +4,9 @@
 # tier:  critical | high | medium | low
 # allow: open_fix_pr, auto_merge_if_verified, rollback, takedown
 
+# The local Docker Compose bank. `hedwig down/up <service>`, takedowns and rebuilds use it.
+compose: ../deploy/docker-compose.yml
+
 services:
   transaction:
     language: java
@@ -12,32 +15,44 @@ services:
     - open_fix_pr
     - auto_merge_if_verified
     - rollback
+    - takedown
     test_cmd: ./mvnw -q -o test
     log_path: transaction/logs/access.log
     health_path: /health
+    port: 8080
   account:
     language: rust
     tier: high
     allow:
     - open_fix_pr
+    - auto_merge_if_verified
+    - rollback
+    - takedown
     test_cmd: cargo test --offline
     log_path: account/logs/access.log
     health_path: /health
+    port: 8080
   support:
     language: php
     tier: medium
     allow:
     - open_fix_pr
+    - auto_merge_if_verified
+    - rollback
+    - takedown
     test_cmd: vendor/bin/phpunit
     log_path: support/logs/access.log
     health_path: /health
+    port: 8080
   notifications:
     language: node
     tier: low
     allow:
     - open_fix_pr
     - auto_merge_if_verified
+    - rollback
     - takedown
     test_cmd: npm test
     log_path: notifications/logs/access.log
     health_path: /health
+    port: 8080

@@ -13,6 +13,7 @@ console = Console()
 
 TOOLS = {
     "git": "clone and branch fixes",
+    "gh": "open pull requests for fixes (GitHub CLI, gh auth login)",
     "docker": "differential replay (old vs new build)",
     "npm": "Node services",
     "cargo": "Rust services",

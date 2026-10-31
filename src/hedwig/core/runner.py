@@ -52,6 +52,30 @@ def toplevel(folder: Path) -> Path | None:
     return Path(done.stdout.strip()) if done.returncode == 0 else None
 
 
+def has_commits(top: Path) -> bool:
+    return git(top, "rev-parse", "--verify", "--quiet", "HEAD").returncode == 0
+
+
+def hide_state_dir(top: Path, root: Path) -> None:
+    """Keep Hedwig's .hedwig/ folder out of `git status` without touching the repo's files."""
+    exclude = git(top, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    if not exclude:
+        return
+    path = (top / exclude) if not Path(exclude).is_absolute() else Path(exclude)
+    relative = root.resolve().relative_to(top).as_posix()
+    line = f"/{relative}/.hedwig/" if relative != "." else "/.hedwig/"
+    try:
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if line not in existing.splitlines():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                existing + ("" if existing.endswith("\n") or not existing else "\n") + line + "\n",
+                encoding="utf-8",
+            )
+    except OSError:
+        pass
+
+
 def is_dirty(top: Path, relative: str) -> bool:
     return bool(git(top, "status", "--porcelain", "--", relative).stdout.strip())
 
@@ -60,9 +84,24 @@ def new_run_id(service: str) -> str:
     return f"{time.strftime('%Y%m%d-%H%M%S')}-{service}-{uuid.uuid4().hex[:4]}"
 
 
+def _on_origin(top: Path, name: str) -> bool:
+    try:
+        done = subprocess.run(
+            ["git", "ls-remote", "--exit-code", "--heads", "origin", name],
+            cwd=top, capture_output=True, text=True, timeout=20,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )  # fmt: skip
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return done.returncode == 0
+
+
 def free_branch(top: Path, wanted: str) -> str:
+    """A branch name used neither locally nor on origin, so the push can never collide."""
     name, n = wanted, 1
-    while git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0:
+    while git(
+        top, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}"
+    ).returncode == 0 or _on_origin(top, name):
         n += 1
         name = f"{wanted}-{n}"
     return name

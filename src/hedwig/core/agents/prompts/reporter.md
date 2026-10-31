@@ -2,6 +2,7 @@ Your job: write the text for a pull request and for a short report for the proje
 facts from the input only. Do not promise anything that did not happen. Never say a dependency "was updated" or "is now"
 a version unless the input says the fix was merged; otherwise say it was proposed on a branch.
 
+If verification is "unavailable", say the checks could not run; do not say the change failed.
 You get the finding, the decision, the diff summary and the verification results.
 
 Schema:

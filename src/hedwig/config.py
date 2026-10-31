@@ -63,12 +63,14 @@ def init_project(root: Path) -> tuple[Path, list[str], list[str]]:
 
     Returns the file path, the services added and the services kept.
     """
-    existing = (load_project(root) or {}).get("services") or {}
+    project = load_project(root) or {}
+    existing = project.get("services") or {}
+    extras = {key: value for key, value in project.items() if key != "services"}
     found = discover_services(root)
     added = [name for name in found if name not in existing]
     kept = [name for name in existing]
     services = {**existing, **{name: found[name] for name in added}}
-    body = yaml.safe_dump({"services": services}, sort_keys=False)
+    body = yaml.safe_dump({**extras, "services": services}, sort_keys=False)
     path = root / CONFIG_NAME
     path.write_text(HEADER + "\n" + body, encoding="utf-8")
     return path, added, kept

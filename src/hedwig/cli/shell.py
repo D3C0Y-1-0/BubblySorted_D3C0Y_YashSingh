@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from hedwig import __version__, config, settings
-from hedwig.cli import commands, fix_cmd, scan_cmd
+from hedwig.cli import commands, deploy_cmd, fix_cmd, scan_cmd
 from hedwig.ui.mascot import banner
 
 console = Console()
@@ -182,6 +182,14 @@ def _dash(session: Session, args: list[str]) -> None:
     fix_cmd.run_in_app("dash", args, session.root)
 
 
+def _down(session: Session, args: list[str]) -> None:
+    deploy_cmd.run_in_app("down", args, session.root)
+
+
+def _up(session: Session, args: list[str]) -> None:
+    deploy_cmd.run_in_app("up", args, session.root)
+
+
 def _doctor(session: Session, args: list[str]) -> None:
     commands.doctor()
 
@@ -207,6 +215,8 @@ COMMANDS: dict[str, tuple[str, Handler]] = {
     "/fix": ("Fix a service's vulnerable packages: /fix <service>", _fix),
     "/report": ("PDF report for the PM: /report <service|run-id> [--email]", _report),
     "/dash": ("Open the terminal dashboard", _dash),
+    "/down": ("Take a service down (docker compose stop): /down <service>", _down),
+    "/up": ("Bring a service back up: /up <service>", _up),
     "/config": ("Set API keys (also: show, set <key> <value>)", _config),
     "/doctor": ("Check installed tools", _doctor),
     "/clear": ("Clear the screen", _clear),

@@ -20,7 +20,9 @@ def write(root: Path, finding: Finding, run: Run, diff_stat: str, checks: list[s
     user = (
         f"{advisory_block(finding)}\n\n"
         f"Service {run.service}: {run.package} {run.from_version} -> {run.to_version}.\n"
-        f"Verified: {run.state == 'verified'}. Planned action: {run.action}. Policy: {decision}.\n"
+        f"Verification: {run.verification} (passed, failed, or unavailable = the checks could not "
+        "run, which says nothing against the change). "
+        f"Planned action: {run.action}. Policy: {decision}.\n"
         f"Diff summary:\n{diff_stat}\n\nChecks:\n- " + "\n- ".join(checks) + "\n\n"
         "Answer with the JSON object."
     )

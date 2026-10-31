@@ -33,6 +33,8 @@ ACTION_TEXT = {
     "merged": "fix merged",
     "review_pr": "fix ready, waiting for human review",
     "failed_pr": "fix failed verification, PR left for a human",
+    "rolled_back": "fix merged, did not come up, rolled back",
+    "deploy_failed": "fix merged, service did not come up",
     "takedown": "service taken down",
     "notify": "project manager notified",
     "none": "no action",
