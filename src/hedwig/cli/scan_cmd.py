@@ -201,6 +201,57 @@ def explain(
         console.print(f"  [bold]Action:[/bold] {_action(f)}")
 
 
+APP_USAGE = {
+    "scan": "/scan [path|git-url] [--offline] [--advisories DIR] [--tier TIER] [--json]",
+    "status": "/status [--offline] [--advisories DIR] [--tier TIER] [--json]",
+    "explain": "/explain <id> [--offline] [--advisories DIR] [--tier TIER] [--json]",
+}
+_APP_FLAGS = {"--offline": "offline", "--json": "json_output"}
+_APP_OPTIONS = {"--advisories": "advisories", "--tier": "tier"}
+
+
+def _parse_app_args(args: list[str]) -> tuple[list[str], dict] | str:
+    """Split slash-command arguments into positionals and keyword options, or an error."""
+    positional: list[str] = []
+    options: dict = {}
+    items = iter(args)
+    for item in items:
+        if item in _APP_FLAGS:
+            options[_APP_FLAGS[item]] = True
+        elif item in _APP_OPTIONS:
+            value = next(items, None)
+            if value is None:
+                return f"{item} needs a value"
+            options[_APP_OPTIONS[item]] = Path(value) if item == "--advisories" else value
+        elif item.startswith("--"):
+            return f"unknown option {item}"
+        else:
+            positional.append(item)
+    return positional, options
+
+
+def run_in_app(name: str, args: list[str], root: Path) -> None:
+    """Run scan, status or explain from a slash command typed in the Hedwig app."""
+    parsed = _parse_app_args(args)
+    if isinstance(parsed, str):
+        console.print(f"[red]{parsed}[/red]\nUsage: {APP_USAGE[name]}")
+        return
+    positional, options = parsed
+    limit = 0 if name == "status" else 1
+    if len(positional) > limit or (name == "explain" and not positional):
+        console.print(f"Usage: {APP_USAGE[name]}")
+        return
+    try:
+        if name == "scan":
+            scan(positional[0] if positional else str(root), **options)
+        elif name == "status":
+            status(**options)
+        else:
+            explain(positional[0], **options)
+    except typer.Exit:
+        pass  # the command already printed its error
+
+
 def register(app: typer.Typer) -> None:
     app.command("scan")(scan)
     app.command("status")(status)

@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from hedwig import __version__, config, settings
-from hedwig.cli import commands
+from hedwig.cli import commands, scan_cmd
 from hedwig.ui.mascot import banner
 
 console = Console()
@@ -66,6 +66,18 @@ def _config(session: Session, args: list[str]) -> None:
         console.print("Usage: /config | /config show | /config set <key> <value>")
 
 
+def _scan(session: Session, args: list[str]) -> None:
+    scan_cmd.run_in_app("scan", args, session.root)
+
+
+def _status(session: Session, args: list[str]) -> None:
+    scan_cmd.run_in_app("status", args, session.root)
+
+
+def _explain(session: Session, args: list[str]) -> None:
+    scan_cmd.run_in_app("explain", args, session.root)
+
+
 def _doctor(session: Session, args: list[str]) -> None:
     commands.doctor()
 
@@ -84,6 +96,9 @@ Handler = Callable[[Session, list[str]], None]
 COMMANDS: dict[str, tuple[str, Handler]] = {
     "/help": ("List the commands", _help),
     "/init": ("Set up .hedwig.yml for this folder", _init),
+    "/scan": ("Find vulnerabilities (this folder, a path or a git URL)", _scan),
+    "/status": ("Findings per service in this folder", _status),
+    "/explain": ("Explain one finding: /explain <CVE or advisory id>", _explain),
     "/config": ("Set API keys (also: show, set <key> <value>)", _config),
     "/doctor": ("Check installed tools", _doctor),
     "/clear": ("Clear the screen", _clear),
