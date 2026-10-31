@@ -25,9 +25,11 @@ from . import state as signals
 from .challenge import Challenger
 from .config import Config, Service
 from .decoy import Decoy
+from .elastic import EventSource
 from .events import EventBus, make_event
 from .honeytokens import Honeytokens, Token
 from .routes import RouteRing
+from .shipper import Shipper
 from .state import State
 from .stats import Stats
 
@@ -80,6 +82,7 @@ class Guard:
         sleep: Callable = asyncio.sleep,
         wallclock: Callable[[], float] = time.time,
         decoy: Decoy | None = None,
+        shipper: Shipper | None = None,
     ) -> None:
         self.config = config
         self.token = token
@@ -94,7 +97,12 @@ class Guard:
         self.alarms: deque[dict] = deque(maxlen=20)  # honeytoken alarms
         self.campaigns: list[dict] = []
         self.agents_status = "rules"  # rules | ai | offline
-        self.elk_status = "off"  # off | online | offline
+        self.shipper = shipper
+        if self.shipper is None and config.elk.enabled:
+            self.shipper = Shipper(config.elk.logstash).start()
+        if self.shipper:
+            self.bus.listeners.append(self.shipper.put)
+        self.source = EventSource(self.bus, config.elk)
         tokens_file = config.data_dir / "honeytokens.jsonl" if config.data_dir else None
         self.honeytokens = Honeytokens(self.secret, tokens_file)
         self.decoy.fill = self.honeytokens.fill
@@ -401,6 +409,13 @@ class Guard:
         self.note(agent, f"honeytokens rotated (set {epoch})")
         return epoch
 
+    @property
+    def elk_status(self) -> str:
+        """off | online | offline: Elasticsearch reachable and Logstash acknowledging events."""
+        if self.shipper and not self.shipper.healthy:
+            return "offline"
+        return self.source.status
+
     def note(self, agent: str, text: str) -> None:
         stamp = datetime.now(UTC).isoformat(timespec="seconds")
         self.feed.append({"@timestamp": stamp, "agent": agent, "text": text[:300]})
@@ -550,7 +565,19 @@ class Guard:
 
     async def aclose(self) -> None:
         await self.upstream.aclose()
+        await self.source.aclose()
+        if self.shipper:
+            self.shipper.close()
         self.bus.close()
+
+    async def watch(self, every_s: float = 5.0) -> None:
+        """Background loop: keep the ELK status fresh for the dashboard (agents join in C10)."""
+        while True:
+            try:
+                await self.source.ping()
+            except Exception as error:  # the watch must never die
+                print(f"chakravyuha: watch failed: {error}")
+            await asyncio.sleep(every_s)
 
 
 def create_app(config: Config, **kwargs) -> Starlette:
@@ -558,7 +585,11 @@ def create_app(config: Config, **kwargs) -> Starlette:
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
+        task = asyncio.create_task(guard.watch())
         yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
         await guard.aclose()
 
     methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

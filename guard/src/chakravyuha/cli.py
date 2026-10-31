@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> None:
 
     settings = config.load(args.config)
     load_env(config.GUARD_ROOT / ".env")
+    elk = settings.elk
+    elk.logstash = os.environ.get("CHAKRA_LOGSTASH", elk.logstash)
+    elk.elastic_url = os.environ.get("CHAKRA_ELASTIC_URL", elk.elastic_url)
+    elk.kibana_url = os.environ.get("CHAKRA_KIBANA_URL", elk.kibana_url)
+    if os.environ.get("CHAKRA_ELK") == "0":
+        elk.enabled = False
     if not settings.services:
         print(f"chakravyuha: no services in {args.config}; every request will get 404.")
     for name, service in settings.services.items():

@@ -1,0 +1,40 @@
+{
+  "index_patterns": ["chakravyuha-*"],
+  "priority": 200,
+  "template": {
+    "settings": { "number_of_shards": 1, "number_of_replicas": 0 },
+    "mappings": {
+      "dynamic_templates": [
+        { "strings_as_keywords": { "match_mapping_type": "string",
+            "mapping": { "type": "keyword", "ignore_above": 1024 } } }
+      ],
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "source": { "properties": { "ip": { "type": "ip" } } },
+        "url": { "properties": { "path": { "type": "keyword", "ignore_above": 2048 } } },
+        "http": { "properties": {
+          "request": { "properties": { "method": { "type": "keyword" } } },
+          "response": { "properties": { "status_code": { "type": "integer" } } } } },
+        "event": { "properties": {
+          "id": { "type": "keyword" }, "action": { "type": "keyword" },
+          "category": { "type": "keyword" } } },
+        "ring": { "type": "keyword" },
+        "service": { "type": "keyword" },
+        "rule": { "type": "keyword" },
+        "campaign": { "type": "keyword" },
+        "user": { "properties": { "name": { "type": "keyword" } } },
+        "user_agent": { "properties": { "original": { "type": "keyword", "ignore_above": 512 } } },
+        "hedwig": { "properties": {
+          "ring_n": { "type": "integer" },
+          "suspicion": { "type": "float" },
+          "password_fp": { "type": "keyword" },
+          "client": { "type": "keyword" },
+          "decoy": { "type": "boolean" },
+          "monitor": { "type": "boolean" },
+          "linked_ips": { "type": "ip" },
+          "honeytoken": { "properties": {
+            "kind": { "type": "keyword" }, "issued_to": { "type": "ip" } } } } }
+      }
+    }
+  }
+}

@@ -8,7 +8,6 @@ Elasticsearch, Logstash and Kibana, and that every port Compose publishes is bou
 """
 
 import json
-import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -30,11 +29,12 @@ def http_ok(url: str) -> bool:
         return False
 
 
-def tcp_ok(host: str, port: int) -> bool:
+def logstash_ok() -> bool:
+    """Ask Logstash's own API: Docker's port proxy accepts connections even when it is down."""
     try:
-        with socket.create_connection((host, port), timeout=2):
-            return True
-    except OSError:
+        pipelines = httpx.get("http://127.0.0.1:9600/_node/pipelines", timeout=3).json()
+        return "main" in pipelines.get("pipelines", {})
+    except (httpx.HTTPError, ValueError):
         return False
 
 
@@ -70,7 +70,7 @@ def main() -> int:
         ("guard", http_ok("http://127.0.0.1:8080/__hedwig/health"), "http://127.0.0.1:8080"),
         ("dashboard", http_ok("http://127.0.0.1:8090/api/snapshot"), "http://127.0.0.1:8090"),
         ("elasticsearch", http_ok("http://127.0.0.1:9200"), "http://127.0.0.1:9200"),
-        ("logstash", tcp_ok("127.0.0.1", 5000), "tcp 127.0.0.1:5000"),
+        ("logstash", logstash_ok(), "http://127.0.0.1:5000 (API :9600)"),
         ("kibana", http_ok("http://127.0.0.1:5601/api/status"), "http://127.0.0.1:5601"),
     ]
     width = max(len(name) for name, *_ in checks)

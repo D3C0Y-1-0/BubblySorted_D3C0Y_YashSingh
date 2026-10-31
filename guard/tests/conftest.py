@@ -77,6 +77,7 @@ def make_guard():
         settings = {
             "data_dir": None,
             "bank_root": None,
+            "elk": {"enabled": False},
             "stdout_events": False,
             "challenge": {"difficulty": 4},  # cheap puzzles, so tests can solve them
             "services": {

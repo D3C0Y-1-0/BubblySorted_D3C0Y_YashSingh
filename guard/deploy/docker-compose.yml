@@ -39,8 +39,9 @@ services:
       LS_JAVA_OPTS: -Xms512m -Xmx512m
       xpack.monitoring.enabled: "false"
       config.reload.automatic: "true"
+      api.http.host: 0.0.0.0
     volumes: ["./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro"]
-    ports: ["127.0.0.1:5000:5000"]
+    ports: ["127.0.0.1:5000:8080", "127.0.0.1:9600:9600"]  # events in (http), monitoring API
     depends_on:
       elasticsearch: { condition: service_healthy }
     restart: unless-stopped
@@ -57,6 +58,15 @@ services:
       interval: 10s
       retries: 40
     restart: unless-stopped
+
+  elk-setup:  # one-shot: index template + Kibana dashboard import
+    image: curlimages/curl:8.11.1
+    entrypoint: ["sh", "/elk/setup.sh"]
+    volumes: ["./elk:/elk:ro"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      kibana: { condition: service_started }
+    restart: "no"
 
 volumes:
   esdata:
