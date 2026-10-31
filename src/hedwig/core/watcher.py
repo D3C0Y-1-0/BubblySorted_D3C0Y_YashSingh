@@ -156,7 +156,8 @@ def _run_events(incident: Incident, run: Run) -> None:
 
 def _is_up(root: Path, service: str) -> bool:
     if deploy.compose_file(root) is not None:
-        return deploy.status(root, [service])[service] == "active"
+        # "starting" is a container whose healthcheck has not run yet; it is up
+        return deploy.status(root, [service])[service] in ("active", "starting")
     return not actions.is_down(root, service)
 
 

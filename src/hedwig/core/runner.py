@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -248,7 +249,21 @@ def _run_command(name: str, folder: Path, command: str, env: dict | None = None)
         return Check(name, True, command)
     if done.returncode == PYTEST_NO_TESTS and "pytest" in command:
         return Check(name, True, "the service has no tests", ran=False)
-    return Check(name, False, f"`{command}` failed:\n{(done.stdout + done.stderr).strip()[-600:]}")
+    return Check(name, False, f"`{command}` failed:\n{failure_text(done.stdout + done.stderr)}")
+
+
+COMPILE_ERROR = re.compile(
+    r"^\[ERROR\] .*\.java:\[\d+,\d+\].*$|^\[ERROR\]\s+(?:required|found|reason):.*$", re.M
+)
+
+
+def failure_text(output: str) -> str:
+    """The part of a failed command's output a fixer needs: every compiler error, else the tail."""
+    errors = [m.group(0).strip() for m in COMPILE_ERROR.finditer(output)]
+    if errors:
+        short = [re.sub(r"^\[ERROR\] .*?/src/", "[ERROR] src/", line) for line in errors]
+        return "\n".join(dict.fromkeys(short))[-2400:]
+    return output.strip()[-1200:]
 
 
 def docker_ready(folder: Path) -> str | None:

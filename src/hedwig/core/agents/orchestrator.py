@@ -20,7 +20,7 @@ from hedwig.core.code_index import CodeIndex, _matches, module_names
 from hedwig.core.llm import AgentError
 from hedwig.core.models import Finding, Package, Run, Step
 
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 MAX_ALLOWED_CODE_FILES = 8
 StepCallback = Callable[[Run, Step], None]
 
@@ -392,10 +392,13 @@ def _attempts(
     env_problem = runner.docker_ready(spec.folder) if has_image else None
     baseline = _service_ids(source, spec.folder)
     cases: list[dict] = []
+    tested = False  # the Tester's cases do not change between attempts
+    dirty = False  # a failed check left the worktree in a state worth discarding
     for attempt in range(MAX_RETRIES + 1):
         run.attempts = attempt + 1
-        if attempt:
-            runner.reset_service(repo, new_wt, relative)
+        if attempt and dirty:
+            runner.reset_service(repo, new_wt, relative)  # otherwise keep the edits so far
+        dirty = False
         step = pipe.begin("plan", f"attempt {attempt + 1}: bump {top.package} to {target}")
         if removal:
             error = bump.remove(new_folder, top) or bump.regenerate_lock(
@@ -428,7 +431,7 @@ def _attempts(
                 error = bump.regenerate_lock(new_folder, top, target)
                 if error:
                     pipe.end(step, "failed", error)
-                    failures, run.failed_step = [error], "fixer"
+                    failures, run.failed_step, dirty = [error], "fixer", True
                     continue
             pipe.end(step, "ok", f"{len(proposal.edits)} edit(s): {proposal.rationale}")
 
@@ -436,11 +439,11 @@ def _attempts(
         if violations:
             step = pipe.begin("checks")
             pipe.end(step, "failed", "; ".join(violations))
-            failures, run.failed_step = violations, "checks"
+            failures, run.failed_step, dirty = violations, "checks", True
             continue
 
-        cases = []
-        if top.call_sites:
+        if top.call_sites and not tested:
+            tested = True
             step = pipe.begin("tester")
             try:
                 cases = [c.model_dump() for c in tester.propose(root, new_folder, top)]
