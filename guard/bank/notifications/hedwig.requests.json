@@ -1,0 +1,6 @@
+[
+  { "method": "GET", "path": "/health" },
+  { "method": "GET", "path": "/offers" },
+  { "method": "GET", "path": "/token" },
+  { "method": "GET", "path": "/verify" }
+]

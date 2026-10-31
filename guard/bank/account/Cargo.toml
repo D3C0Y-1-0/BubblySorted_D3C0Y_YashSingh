@@ -1,0 +1,18 @@
+[package]
+name = "account"
+version = "1.0.0"
+edition = "2021"
+description = "Demo bank: account service (fake data only)"
+
+[[bin]]
+name = "account"
+path = "src/main.rs"
+
+[lib]
+name = "account"
+path = "src/lib.rs"
+
+[dependencies]
+# Seeded vulnerable version (RUSTSEC-2022-0013) for the Hedwig demo. It is called only on
+# constant patterns, never on user input.
+regex = "=1.5.4"

@@ -1,0 +1,16 @@
+{
+  "name": "notifications",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo bank: notifications service (fake data only)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "lodash": "4.17.15",
+    "jsonwebtoken": "8.5.1"
+  }
+}

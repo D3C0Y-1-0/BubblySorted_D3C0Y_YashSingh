@@ -1,0 +1,5 @@
+[
+  { "method": "GET", "path": "/health" },
+  { "method": "GET", "path": "/tickets" },
+  { "method": "GET", "path": "/reply-preview" }
+]
