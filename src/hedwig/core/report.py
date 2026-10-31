@@ -1,7 +1,6 @@
 """PM report: Jinja2 -> LaTeX -> tectonic -> PDF, optionally emailed over SMTP."""
 
 import re
-import shutil
 import smtplib
 import subprocess
 from dataclasses import dataclass
@@ -10,15 +9,18 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from jinja2 import Environment
+from rich.console import Console
 
 from hedwig import settings
-from hedwig.core import engine, runs
+from hedwig.core import engine, runs, tools
 from hedwig.core.advisories import AdvisorySource
 from hedwig.core.models import Finding, Run, ScanResult
 
+console = Console()
 TEMPLATE = Path(__file__).resolve().parent.parent / "data" / "report.tex.j2"
 REPORTS = Path(".hedwig") / "reports"
 TOP = 8
+COMPILE_TIMEOUT = 600  # the first run fetches TeX support files
 DEFAULT_SMTP = ("smtp.gmail.com", 587)  # used until smtp_host / smtp_port exist in settings
 EVIDENCE = {
     0: "vulnerable version present",
@@ -106,7 +108,11 @@ def duration(run: Run) -> str:
 
 def _next_steps(data: ReportData) -> list[str]:
     steps = []
-    for f in data.findings[:3]:
+    seen: set[tuple[str, str]] = set()
+    for f in data.findings:
+        if (f.service, f.package) in seen or len(seen) == 3:
+            continue
+        seen.add((f.service, f.package))
         if f.package_fix:
             steps.append(f"Bump {f.package} from {f.version} to {f.package_fix} in {f.service}.")
         else:
@@ -202,24 +208,34 @@ class _View:
 
 
 def compile_pdf(root: Path, data: ReportData) -> Path:
-    """Write the .tex and compile it. The .tex stays even if tectonic is missing."""
+    """Write the .tex and compile it. The .tex stays even if the PDF cannot be built."""
     folder = root / REPORTS
     folder.mkdir(parents=True, exist_ok=True)
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", data.name).strip("-") or "report"
     stem += "-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     tex = folder / f"{stem}.tex"
     tex.write_text(render_tex(data), encoding="utf-8")
-    if not shutil.which("tectonic"):
-        raise ReportError(f"tectonic is not installed (see `hedwig doctor`); LaTeX saved at {tex}")
-    done = subprocess.run(
-        ["tectonic", "-X", "compile", "--outdir", str(folder), str(tex)],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    try:
+        tectonic = tools.ensure_tectonic(say=lambda text: console.print(text))
+    except tools.ToolError as err:
+        raise ReportError(f"{err} (LaTeX saved at {tex})") from err
+    try:
+        done = subprocess.run(
+            [str(tectonic), "-X", "compile", "--outdir", str(folder), str(tex)],
+            capture_output=True,
+            text=True,
+            timeout=COMPILE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as err:
+        raise ReportError(
+            f"tectonic timed out (is the network up? it fetches TeX files on first use). "
+            f"LaTeX saved at {tex}"
+        ) from err
     pdf = tex.with_suffix(".pdf")
     if done.returncode != 0 or not pdf.is_file():
-        raise ReportError(f"tectonic failed: {(done.stderr or done.stdout).strip()[-400:]}")
+        raise ReportError(
+            f"tectonic failed: {(done.stderr or done.stdout).strip()[-600:]}\nLaTeX saved at {tex}"
+        )
     return pdf
 
 
@@ -233,9 +249,13 @@ def smtp_server() -> tuple[str, int]:
 def email_pdf(pdf: Path, subject: str, body: str) -> str:
     """Send the PDF to the project manager. Returns the address it went to."""
     values = settings.load()
-    user, password, to = values["smtp_user"], values["smtp_pass"], values["pm_email"]
-    if not (user and password):
-        raise ReportError("smtp_user / smtp_pass are not set, run: hedwig config")
+    missing = [key for key in ("smtp_user", "smtp_pass") if not values[key]]
+    if missing:
+        raise ReportError(f"{' and '.join(missing)} not set. Run: hedwig config")
+    user, to = values["smtp_user"], values["pm_email"]
+    password = values["smtp_pass"].replace(" ", "")  # Google shows app passwords in 4 groups
+    if "@" not in to:
+        raise ReportError(f"pm_email '{to}' is not an email address. Run: hedwig config")
     message = EmailMessage()
     message["From"], message["To"], message["Subject"] = user, to, subject
     message.set_content(body)
@@ -248,18 +268,56 @@ def email_pdf(pdf: Path, subject: str, body: str) -> str:
             smtp.starttls()
             smtp.login(user, password)
             smtp.send_message(message)
+    except smtplib.SMTPServerDisconnected as err:
+        raise ReportError(
+            f"{host} closed the connection while logging in. That usually means the password is "
+            f"wrong: smtp_pass is {len(password)} characters, a Gmail app password is 16. "
+            "Create one at myaccount.google.com/apppasswords, then run: hedwig config"
+        ) from err
+    except smtplib.SMTPAuthenticationError as err:
+        raise ReportError(
+            f"{host} rejected the login for {user}. For Gmail use an app password "
+            "(Google account > Security > 2-step verification > App passwords)"
+        ) from err
     except (OSError, smtplib.SMTPException) as err:
-        raise ReportError(f"could not send the email: {err}") from err
+        raise ReportError(f"could not send the email through {host}:{port}: {err}") from err
     return to
 
 
-def send_service_report(root: Path, service: str) -> str:
-    """Build, compile and (if SMTP is set up) email a service report. Returns a status line."""
-    data = build(root, service)
-    pdf = compile_pdf(root, data)
-    values = settings.load()
-    if not (values["smtp_user"] and values["smtp_pass"]):
-        return f"report saved at {pdf} (set smtp_user/smtp_pass to email it)"
-    summary = next(iter(data.summaries.values()), f"Hedwig report for {service}.")
-    to = email_pdf(pdf, f"Hedwig report: {service}", summary)
-    return f"report emailed to {to}"
+@dataclass
+class Sent:
+    ok: bool
+    message: str
+    pdf: Path | None = None
+
+
+def mail_body(data: ReportData) -> str:
+    """Plain-text body: the newest summary, what was found and what Hedwig did."""
+    lines = [f"Hedwig report: {data.name}", ""]
+    if data.summaries:
+        lines += [next(iter(data.summaries.values())), ""]
+    lines.append(f"{len(data.findings)} finding(s):")
+    for f in data.findings[:8]:
+        lines.append(f"- {f.id} {f.package}@{f.version} ({f.severity}, risk {f.risk:.2f})")
+    if data.runs:
+        lines += ["", "Fix runs:"]
+        for r in data.runs[:8]:
+            lines.append(
+                f"- {r.package} {r.from_version} to {r.to_version or 'no fix'}: {r.state}, "
+                f"{ACTION_TEXT.get(r.action, r.action)} ({duration(r)})"
+            )
+    lines += ["", "The full report is attached as a PDF."]
+    return "\n".join(lines)
+
+
+def send_service_report(root: Path, service: str) -> Sent:
+    """Build, compile and email a service report. Never raises; says why if it could not."""
+    try:
+        data = build(root, service)
+        pdf = compile_pdf(root, data)
+        to = email_pdf(pdf, f"Hedwig report: {service}", mail_body(data))
+    except ReportError as err:
+        return Sent(False, str(err))
+    except Exception as err:  # reporting must never break a fix run
+        return Sent(False, f"{type(err).__name__}: {err}")
+    return Sent(True, f"report emailed to {to}", pdf)

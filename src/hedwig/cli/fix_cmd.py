@@ -10,7 +10,7 @@ from rich.table import Table
 
 from hedwig import settings
 from hedwig.cli import scan_cmd
-from hedwig.core import bump, engine, report
+from hedwig.core import actions, bump, engine, report
 from hedwig.core.advisories import AdvisorySource
 from hedwig.core.agents import orchestrator
 from hedwig.core.models import Decision, Finding, Run, ScanResult, Step
@@ -56,6 +56,9 @@ def fix(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print the plan and decision. Change nothing.")
     ] = False,
+    no_email: Annotated[
+        bool, typer.Option("--no-email", help="Do not email the PM report afterwards.")
+    ] = False,
     offline: Offline = False,
     advisories: Advisories = None,
     tier: Tier = "medium",
@@ -91,6 +94,7 @@ def fix(
             )
         except Exception as err:  # one package failing must not stop the others
             console.print(f"[red]{type(err).__name__}: {err}[/red]")
+    sent = None if no_email or not runs else actions.notify_pm(root, service, "fix finished")
     if json_output:
         scan_cmd._print_json(json.dumps([r.model_dump() for r in runs], indent=2))
         return
@@ -114,6 +118,12 @@ def fix(
                 f"not in your files. Review: git diff HEAD...{r.branch}   "
                 f"Apply: git merge {r.branch}"
             )
+
+    if sent:
+        if sent.ok:
+            console.print(f"[green]{sent.message}[/green] (PDF: {sent.pdf})")
+        else:
+            console.print(f"[red]Report NOT sent:[/red] {sent.message}")
 
 
 def _print_plan(spec: engine.ServiceSpec, groups: list[list[Finding]], json_output: bool) -> None:
@@ -181,7 +191,10 @@ def dash(offline: Offline = False, advisories: Advisories = None, tier: Tier = "
 
 
 APP_USAGE = {
-    "fix": "/fix <service> [--package NAME] [--dry-run] [--offline] [--advisories DIR] [--json]",
+    "fix": (
+        "/fix <service> [--package NAME] [--dry-run] [--no-email] "
+        "[--offline] [--advisories DIR] [--json]"
+    ),
     "report": "/report <service|run-id> [--email]",
     "dash": "/dash [--offline] [--advisories DIR]",
 }
@@ -190,10 +203,11 @@ _FLAGS = {
     "--offline": "offline",
     "--json": "json_output",
     "--email": "email",
+    "--no-email": "no_email",
 }
 _VALUES = {"--package": "package", "--advisories": "advisories", "--tier": "tier"}
 _ALLOWED = {
-    "fix": {"package", "dry_run", "offline", "advisories", "tier", "json_output"},
+    "fix": {"package", "dry_run", "no_email", "offline", "advisories", "tier", "json_output"},
     "report": {"email", "offline", "advisories", "tier"},
     "dash": {"offline", "advisories", "tier"},
 }

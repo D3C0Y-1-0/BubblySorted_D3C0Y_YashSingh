@@ -48,8 +48,7 @@ Severity & Risk & Evid. & Service & Package & KEV & Action \\
 \section*{Evidence and reachability}
 \begin{itemize}
 ((* for f in top *))
-\item \textbf{(((f.id | tex)))}: (((f.evidence_text | tex))). Reachability: (((f.reachability | tex)))
-((* if f.call_sites *)) (called in (((f.call_sites[0].function | tex)))() at (((f.call_sites[0].file | tex))):(((f.call_sites[0].line))))((* endif *)).
+\item \textbf{(((f.id | tex)))}: (((f.evidence_text | tex))). Reachability: (((f.reachability | tex)))((* if f.call_sites *)) (called in (((f.call_sites[0].function | tex)))() at (((f.call_sites[0].file | tex))):(((f.call_sites[0].line))))((* endif *)).
 ((* if f.attacks *)) Attacks seen in logs: (((f.attacks | join(", ") | tex))).((* endif *))
 ((* if f.compromise *)) \textbf{Signs of compromise were found in the service logs.}((* endif *))
 ((* endfor *))

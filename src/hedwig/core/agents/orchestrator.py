@@ -123,12 +123,10 @@ def run_fix(
         step = pipe.begin("act", decision.reason)
         actions.takedown(root, spec.name, decision.reason)
         pipe.end(step, "ok", "service taken down (pending executor)")
-        actions.notify_pm(root, spec.name, decision.reason)
         return _finish(root, run, "skipped", "takedown")
     if decision.action == "notify":
         step = pipe.begin("act", decision.reason)
-        message = actions.notify_pm(root, spec.name, decision.reason)
-        pipe.end(step, "ok", message)
+        pipe.end(step, "ok", "the project manager is notified in the report")
         return _finish(root, run, "skipped", "notify")
 
     step = pipe.begin("plan")
@@ -137,13 +135,11 @@ def run_fix(
         pipe.end(
             step, "skipped", "no fixed version exists; isolate the service or drop the package"
         )
-        actions.notify_pm(root, spec.name, "no fixed version exists")
         return _finish(root, run, "skipped", "notify")
     if bump.declared(spec.folder, top) is None:
         pipe.end(
             step, "skipped", f"{top.package} is transitive; Hedwig only bumps direct dependencies"
         )
-        actions.notify_pm(root, spec.name, "transitive dependency")
         return _finish(root, run, "skipped", "notify")
     repo = runner.toplevel(spec.folder)
     if repo is None:
@@ -399,20 +395,16 @@ def _act(
             return _finish(root, run, "verified", "merged")
         actions.save_pr(root, run, title, text.pr_body, "hedwig:needs-review")
         pipe.end(step, "ok", f"could not fast-forward ({error}); left for review")
-        actions.notify_pm(root, run.service, "merge needs review")
         return _finish(root, run, "verified", "review_pr")
     if verified:
         actions.save_pr(root, run, title, text.pr_body, "hedwig:needs-review")
         pipe.end(step, "ok", "fix verified; left for human review")
-        actions.notify_pm(root, run.service, "fix verified, awaiting review")
         return _finish(root, run, "verified", "review_pr")
     if decision.on_failed == "takedown":
         actions.takedown(root, run.service, f"fix failed at {run.failed_step}")
         actions.save_pr(root, run, title, text.pr_body, "draft")
         pipe.end(step, "ok", "verification failed; service taken down (pending executor)")
-        actions.notify_pm(root, run.service, "fix failed, service taken down")
         return _finish(root, run, "failed", "takedown")
     actions.save_pr(root, run, title, text.pr_body, "hedwig:verification-failed")
     pipe.end(step, "ok", "verification failed; PR left for a human")
-    actions.notify_pm(root, run.service, "fix failed verification")
     return _finish(root, run, "failed", "failed_pr")

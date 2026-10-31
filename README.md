@@ -66,8 +66,10 @@ Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`
 `fix` needs a Groq key (`/config`), `git`, and for the old-vs-new comparison `docker`. It works in
 git worktrees under `.hedwig/work/`, never in your working copy, and writes everything to
 `.hedwig/runs/<run-id>/` (`diff.patch`, `cases.json`, `verdict.json`, `review.json`, `pr.md`).
-Every agent call and decision goes to `.hedwig/audit.jsonl`. `report` needs `tectonic` for the PDF;
-`--email` needs `smtp_user` and `smtp_pass` (Gmail by default, app password).
+Every agent call and decision goes to `.hedwig/audit.jsonl`. `report` builds the PDF with `tectonic`, which Hedwig downloads once into `~/.hedwig/bin` on first
+use (the first report needs internet). `--email` sends it to `pm_email` and needs `smtp_user` and
+`smtp_pass`: for Gmail that is a 16-character app password (myaccount.google.com/apppasswords).
+`/fix` emails the PM report once when it finishes; add `--no-email` to skip it.
 
 Run the install command again to update. The repo must be public for these links to work.
 

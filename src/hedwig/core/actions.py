@@ -7,7 +7,7 @@ arrives with the deployment phase.
 import json
 from pathlib import Path
 
-from hedwig.core import audit, runner
+from hedwig.core import audit, report, runner
 from hedwig.core.models import Run
 
 STATE = Path(".hedwig") / "state.json"
@@ -55,12 +55,11 @@ def save_pr(root: Path, run: Run, title: str, body: str, label: str) -> Path:
     return runs.run_dir(root, run.run_id) / "pr.md"
 
 
-def notify_pm(root: Path, service: str, reason: str) -> str:
-    """Email the project manager the report if email is set up. Never raises."""
-    from hedwig.core import report
-
-    audit.record(root, "action", action="notify_pm", service=service, reason=reason)
-    try:
-        return report.send_service_report(root, service)
-    except Exception as err:  # reporting must never break a fix run
-        return f"report not sent: {err}"
+def notify_pm(root: Path, service: str, reason: str) -> report.Sent:
+    """Email the project manager the service report. Never raises; the result says what happened."""
+    sent = report.send_service_report(root, service)
+    audit.record(
+        root, "action", action="notify_pm", service=service, reason=reason, ok=sent.ok,
+        message=sent.message[:300],
+    )  # fmt: skip
+    return sent

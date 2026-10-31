@@ -236,7 +236,7 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - Every agent call and decision is written to the audit log.
 
 ## Phase 4: Reports + terminal dashboard
-- `hedwig report <service|run-id>`: Jinja2 `.tex` → `tectonic` → PDF, covering what was found, why it ranks there, evidence, action taken, time-to-action and next steps. `--email` sends it over SMTP to `pm_email` (Gmail `smtp.gmail.com:587` unless `smtp_host`/`smtp_port` are set).
+- `hedwig report <service|run-id>`: Jinja2 `.tex` → `tectonic` → PDF, covering what was found, why it ranks there, evidence, action taken, time-to-action and next steps. `--email` sends it over SMTP to `pm_email` (Gmail `smtp.gmail.com:587` unless `smtp_host`/`smtp_port` are set). `tectonic` is downloaded on first use. `/fix` sends one report per run of the command, and errors are printed.
 - `hedwig dash` (Textual):
   - owl header (watching/alert/asleep), risk gauge, feed freshness, clock
   - a card per service (tier, health, risk colour)

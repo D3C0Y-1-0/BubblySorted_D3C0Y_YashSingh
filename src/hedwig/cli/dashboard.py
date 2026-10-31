@@ -365,7 +365,9 @@ class DashApp(App):
     def run_fix(self, key: str, group: list[Finding], spec: engine.ServiceSpec) -> None:
         try:
             run = orchestrator.run_fix(self.root, group, spec, self.source)
-            message, severity = f"{run.package}: {run.state}, {run.action}", "information"
+            sent = actions.notify_pm(self.root, spec.name, "fix finished")
+            message = f"{run.package}: {run.state}, {run.action}. {sent.message}"
+            severity = "information" if sent.ok else "warning"
         except Exception as err:
             message, severity = f"fix failed: {err}", "error"
         self.fixing.discard(key)
