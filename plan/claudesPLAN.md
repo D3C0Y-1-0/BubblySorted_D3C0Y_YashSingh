@@ -7,7 +7,7 @@
 Decisions on top of the team plan:
 1. **Strict engine.** Every finding goes into the response pipeline, whatever its severity. Nothing is ignored. Severity only sets the order and what the report says.
 2. **Response flow.** Agents fix the issue with code changes plus requirement changes, then test and verify it black-box. On a pass, Hedwig auto-merges if `.hedwig.yml` allows it. On a fail, it takes the service down if allowed. Otherwise it leaves the PR for a human and emails the PM.
-3. **Multi-agent fixing system.** Fixer, Tester, Verifier and Reporter each have a strict system prompt. A deterministic orchestrator runs them. All LLM work uses **Qwen on Groq** (`qwen/qwen3-32b`; check the model ID on Groq before coding).
+3. **Multi-agent fixing system.** Fixer, Tester, Verifier and Reporter each have a strict system prompt. A deterministic orchestrator runs them. All LLM work uses **Qwen on Groq** (`qwen/qwen3.8-27b`, checked against the Groq docs; JSON mode needs `reasoning_format` `hidden` or `parsed`).
 4. **Terminal + engine first.** The GitHub tooling comes after the terminal is complete and uses a **GitHub App**.
 5. **One-click install** on Linux and Windows from the terminal, then `hedwig config` for API keys. The installer installs the **latest GitHub Release**, which a pipeline publishes whenever someone pushes to the `release` branch.
 6. **Folder-based services only.** Each folder is one service. `hedwig init` writes `.hedwig.yml` automatically with basic fields.
@@ -38,7 +38,7 @@ Flow: merge `main` into `release`, bump the version, push, and the release is pu
 - **Linux/macOS:** `curl -fsSL https://github.com/D3C0Y-1-0/BubblySorted_D3C0Y_YashSingh/releases/latest/download/install.sh | sh`
 - **Windows (PowerShell):** `irm https://github.com/D3C0Y-1-0/BubblySorted_D3C0Y_YashSingh/releases/latest/download/install.ps1 | iex`
 - Both scripts install `uv` if it's missing. They then look up the `.whl` asset URL of the latest release through `api.github.com/repos/<repo>/releases/latest` and run `uv tool install --force <wheel-url>`. This doesn't need git on the user's machine, and uv manages Python 3.12 itself. The script ends by printing `Run: hedwig config`. Re-running the one-liner updates Hedwig. **The repo must be public** for these one-liners to work.
-- `hedwig config` prompts for each key with hidden input and writes `~/.hedwig/config.toml` (the same path on both OSes, through `Path.home()`). Keys: `groq_api_key`, `model` (default `qwen/qwen3-32b`), `smtp_user`, `smtp_pass`, `pm_email` (default `yash1812ys@gmail.com`). The `render_api_key` and GitHub App keys are added in later phases.
+- `hedwig config` prompts for each key with hidden input and writes `~/.hedwig/config.toml` (the same path on both OSes, through `Path.home()`). Keys: `groq_api_key`, `model` (default `qwen/qwen3.8-27b`), `smtp_user`, `smtp_pass`, `pm_email` (default `yash1812ys@gmail.com`). The `render_api_key` and GitHub App keys are added in later phases.
 - `hedwig config set <key> <value>` and `hedwig config show` (masks secrets). Environment variables such as `GROQ_API_KEY` override the file, which CI uses.
 - `hedwig doctor` checks for `git`, `docker`, `npm`, `cargo`, `composer`, `mvn` and `tectonic`, and tells you which features each missing tool disables.
 
