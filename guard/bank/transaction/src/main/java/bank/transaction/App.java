@@ -123,8 +123,11 @@ public final class App {
     private void writeAccessLog(HttpExchange ex, String method, int status) {
         String ip = ex.getRequestHeaders().getFirst("X-Forwarded-For");
         if (ip == null) ip = ex.getRemoteAddress().getAddress().getHostAddress();
+        String query = ex.getRequestURI().getQuery(); // decoded, so attack patterns stay readable
+        String target = (ex.getRequestURI().getPath() + (query == null ? "" : "?" + query))
+                .replace('\n', ' ').replace('\r', ' ');
         String line = Instant.now().truncatedTo(ChronoUnit.SECONDS) + " " + ip.split(",")[0].trim()
-                + " - \"" + method + " " + ex.getRequestURI() + " HTTP/1.1\" " + status + "\n";
+                + " - \"" + method + " " + target + " HTTP/1.1\" " + status + "\n";
         try {
             if (accessLog.getParent() != null) Files.createDirectories(accessLog.getParent());
             Files.writeString(accessLog, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);

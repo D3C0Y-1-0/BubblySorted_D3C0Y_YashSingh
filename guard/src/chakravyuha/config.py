@@ -46,6 +46,16 @@ class Login(BaseModel):
     backoff_max_s: float = 3.0
 
 
+class Elk(BaseModel):
+    """ELK connection settings. CHAKRA_LOGSTASH, CHAKRA_ELASTIC_URL and CHAKRA_KIBANA_URL win."""
+
+    enabled: bool = True
+    logstash: str = "127.0.0.1:5000"
+    elastic_url: str = "http://127.0.0.1:9200"
+    kibana_url: str = "http://127.0.0.1:5601"
+    index: str = "chakravyuha-*"
+
+
 class Service(BaseModel):
     upstream: str
     prefix: str | None = None  # default "/<name>"; "/" catches everything else
@@ -69,8 +79,10 @@ class Config(BaseModel):
     challenge: Challenge = Challenge()
     flood: Flood = Flood()
     login: Login = Login()
+    elk: Elk = Elk()
     services: dict[str, Service] = Field(default_factory=dict)
     data_dir: Path | None = GUARD_ROOT / "data"
+    bank_root: Path | None = GUARD_ROOT / "bank"  # where ring 6 appends to service access logs
     stdout_events: bool = True
 
     @field_validator("trap_minutes")
@@ -95,6 +107,8 @@ def load(path: Path | None = None) -> Config:
         return Config()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     config = Config.model_validate(data)
-    if config.data_dir and not config.data_dir.is_absolute():
-        config.data_dir = path.parent / config.data_dir
+    for field in ("data_dir", "bank_root"):
+        value = getattr(config, field)
+        if value and not value.is_absolute():
+            setattr(config, field, path.parent / value)
     return config

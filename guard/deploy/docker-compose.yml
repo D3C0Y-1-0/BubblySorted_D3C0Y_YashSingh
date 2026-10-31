@@ -1,8 +1,12 @@
-# Hedwig Chakravyuha local stack. Everything is published on 127.0.0.1 only; the Guard itself
-# runs natively on the laptop (`uv run --project guard chakravyuha`), see chakravyuhaPLAN.md.
+# Hedwig Chakravyuha local stack, on one machine. Every port is published on 127.0.0.1 only.
+# The Guard itself runs natively next to it (`uv run --project guard chakravyuha`): Docker
+# Desktop rewrites source addresses, which would merge the loopback attackers into one IP.
 name: chakravyuha
+# One Elastic version for all three (9.5.5, the newest with images on Docker Hub, Oct 2026).
+
 
 services:
+  # -- the bank -----------------------------------------------------------------------------
   web:
     build: ../bank/web
     ports: ["127.0.0.1:9100:8080"]
@@ -13,3 +17,46 @@ services:
     ports: ["127.0.0.1:9101:8080"]
     volumes: ["../bank/transaction/logs:/app/logs"]
     restart: unless-stopped
+
+  # -- ELK ----------------------------------------------------------------------------------
+  elasticsearch:
+    image: elasticsearch:9.5.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"   # bound to 127.0.0.1 only; never expose it
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports: ["127.0.0.1:9200:9200"]
+    volumes: ["esdata:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 10s
+      retries: 30
+    restart: unless-stopped
+
+  logstash:
+    image: logstash:9.5.5
+    environment:
+      LS_JAVA_OPTS: -Xms512m -Xmx512m
+      xpack.monitoring.enabled: "false"
+      config.reload.automatic: "true"
+    volumes: ["./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro"]
+    ports: ["127.0.0.1:5000:5000"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    restart: unless-stopped
+
+  kibana:
+    image: kibana:9.5.5
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports: ["127.0.0.1:5601:5601"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:5601/api/status | grep -q '\"level\":\"available\"'"]
+      interval: 10s
+      retries: 40
+    restart: unless-stopped
+
+volumes:
+  esdata:

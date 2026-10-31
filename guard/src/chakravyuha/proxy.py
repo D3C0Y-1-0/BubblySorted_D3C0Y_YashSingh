@@ -129,6 +129,10 @@ class Guard:
             fields.setdefault("user.name", ctx.username)
         if ctx.password_fp is not None:
             fields.setdefault("hedwig.password_fp", ctx.password_fp)
+        if user_agent := ctx.headers.get("user-agent"):
+            fields.setdefault("user_agent.original", user_agent[:200])
+        script = not user_agent or bool(rings.SCRIPT_UA.search(user_agent))
+        fields.setdefault("hedwig.client", "script" if script else "browser")
         self.bus.emit(
             make_event(
                 action,

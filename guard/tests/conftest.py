@@ -76,6 +76,7 @@ def make_guard():
     def build(**overrides):
         settings = {
             "data_dir": None,
+            "bank_root": None,
             "stdout_events": False,
             "challenge": {"difficulty": 4},  # cheap puzzles, so tests can solve them
             "services": {

@@ -1,7 +1,7 @@
 {
   "root": "C:\\Users\\aniru\\Desktop\\Projects\\Hedwig\\guard\\bank",
   "offline": false,
-  "generated_at": "2026-10-31T17:13:37.104843+00:00",
+  "generated_at": "2026-10-31T17:38:43.161023+00:00",
   "packages": 3,
   "raw_advisories": 9,
   "kev_available": true,
@@ -34,7 +34,7 @@
       "needs_major": false,
       "kev": true,
       "epss": 0.99999,
-      "evidence_level": 2,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -50,7 +50,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -62,11 +64,11 @@
         "exploitability": 1.0,
         "impact": 1.0,
         "criticality": 0.5,
-        "confidence": 0.9
+        "confidence": 0.95
       },
-      "risk": 0.45,
+      "risk": 0.475,
       "severity": "critical",
-      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, low complexity, no privileges needed, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.15.0; bump the package to 2.25.4."
+      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, low complexity, no privileges needed, high impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.15.0; bump the package to 2.25.4."
     },
     {
       "id": "CVE-2021-45046",
@@ -89,7 +91,7 @@
       "needs_major": false,
       "kev": true,
       "epss": 0.99977,
-      "evidence_level": 2,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -105,7 +107,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -117,11 +121,11 @@
         "exploitability": 1.0,
         "impact": 1.0,
         "criticality": 0.5,
-        "confidence": 0.9
+        "confidence": 0.95
       },
-      "risk": 0.45,
+      "risk": 0.475,
       "severity": "critical",
-      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.16.0; bump the package to 2.25.4."
+      "reasoning": "Critical because: actively exploited (KEV), network-exploitable, high impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.16.0; bump the package to 2.25.4."
     },
     {
       "id": "CVE-2021-44832",
@@ -144,7 +148,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.97906,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -160,7 +164,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -172,11 +178,11 @@
         "exploitability": 0.979,
         "impact": 0.971,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
-      "risk": 0.38,
-      "severity": "high",
-      "reasoning": "High because: high exploitation probability (EPSS 98%), network-exploitable, high impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.17.1; bump the package to 2.25.4."
+      "risk": 0.452,
+      "severity": "critical",
+      "reasoning": "Critical because: high exploitation probability (EPSS 98%), network-exploitable, high impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.17.1; bump the package to 2.25.4."
     },
     {
       "id": "CVE-2021-45105",
@@ -199,7 +205,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.99999,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -215,7 +221,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -227,11 +235,11 @@
         "exploitability": 1.0,
         "impact": 0.66,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
-      "risk": 0.264,
+      "risk": 0.314,
       "severity": "high",
-      "reasoning": "High because: high exploitation probability (EPSS 100%), network-exploitable, low complexity, no privileges needed, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.17.0; bump the package to 2.25.4."
+      "reasoning": "High because: high exploitation probability (EPSS 100%), network-exploitable, low complexity, no privileges needed, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.17.0; bump the package to 2.25.4."
     },
     {
       "id": "CVE-2025-68161",
@@ -254,7 +262,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.00767,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -270,7 +278,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -282,11 +292,11 @@
         "exploitability": 0.571,
         "impact": 0.233,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
-      "risk": 0.053,
+      "risk": 0.063,
       "severity": "low",
-      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.3; bump the package to 2.25.4."
+      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.25.3; bump the package to 2.25.4."
     },
     {
       "id": "CVE-2026-34477",
@@ -309,7 +319,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.0056,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -325,7 +335,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -337,11 +349,11 @@
         "exploitability": 0.571,
         "impact": 0.233,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
-      "risk": 0.053,
+      "risk": 0.063,
       "severity": "low",
-      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+      "reasoning": "Low because: network-exploitable, limited impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.25.4."
     },
     {
       "id": "CVE-2026-34479",
@@ -364,7 +376,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.00535,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -380,7 +392,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -392,11 +406,11 @@
         "exploitability": 1.0,
         "impact": 0.0,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
       "risk": 0.0,
       "severity": "low",
-      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.25.4."
     },
     {
       "id": "CVE-2026-34480",
@@ -419,7 +433,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.01046,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -435,7 +449,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -447,11 +463,11 @@
         "exploitability": 1.0,
         "impact": 0.0,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
       "risk": 0.0,
       "severity": "low",
-      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.4."
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.25.4."
     },
     {
       "id": "CVE-2026-49844",
@@ -474,7 +490,7 @@
       "needs_major": false,
       "kev": false,
       "epss": 0.00595,
-      "evidence_level": 1,
+      "evidence_level": 3,
       "reachability": "called",
       "call_sites": [
         {
@@ -490,7 +506,9 @@
           "symbol": "Logger.info"
         }
       ],
-      "attacks": [],
+      "attacks": [
+        "JNDI lookup (Log4Shell) x1"
+      ],
       "compromise": false,
       "decision": {
         "action": "fix",
@@ -502,11 +520,11 @@
         "exploitability": 1.0,
         "impact": 0.0,
         "criticality": 0.5,
-        "confidence": 0.8
+        "confidence": 0.95
       },
       "risk": 0.0,
       "severity": "low",
-      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), medium-tier service. Fixed in 2.25.5."
+      "reasoning": "Low because: network-exploitable, low complexity, no privileges needed, limited impact, called in code (LogManager.getLogger), attack seen in logs (JNDI lookup (Log4Shell) x1), medium-tier service. Fixed in 2.25.5."
     }
   ],
   "warnings": []

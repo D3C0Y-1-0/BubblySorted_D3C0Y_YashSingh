@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import sys
+import uuid
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -48,6 +49,7 @@ def make_event(
         raise ValueError(f"unknown event category {category!r}")
     event: dict[str, Any] = {
         "@timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
+        "event.id": uuid.uuid4().hex[:20],  # the Elasticsearch document id: replays are idempotent
         "source.ip": ip,
         "url.path": path,
         "http.request.method": method,
