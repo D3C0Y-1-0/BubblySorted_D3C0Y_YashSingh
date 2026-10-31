@@ -12,9 +12,11 @@ uv run --project guard chakravyuha            # Guard on 127.0.0.1:8080, dashboa
 uv run --project guard pytest guard/tests     # tests
 ```
 
-Open `http://127.0.0.1:8080` in a browser (demo user `demo` / `demo-pass`). The bank lives in
-`guard/bank/` (`hedwig scan guard/bank` works on it); `guard/tools/stub_bank.py` is a tiny
-stand-in on :9001 for working on the Guard without Docker.
+Open `http://127.0.0.1:8080` in a browser (demo user `demo` / `demo-pass`). The bank lives in `guard/bank/`: `transaction` (Java/log4j), `account` (Rust/regex), `support`
+(PHP/PHPMailer) and `notifications` (Node/lodash+jsonwebtoken), each with a seeded vulnerable
+version, plus the static `web` home page. `hedwig scan guard/bank` finds them all.
+`guard/tools/stub_bank.py` is a tiny stand-in on :9001 for working on the Guard without Docker;
+`guard/tools/demo_reset.py` (or `make demo-reset`) restores the seeded state.
 
 Everything runs on one machine and listens on `127.0.0.1` only. The browser on the laptop is
 the real user (`127.0.0.1`, allowlisted); attack scripts send from `127.0.0.2` and up.

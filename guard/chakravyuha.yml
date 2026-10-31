@@ -33,3 +33,28 @@ services:
       - POST /transfer
     redirect_hosts: []
     uploads: false
+  account:
+    upstream: http://127.0.0.1:9102
+    rate: 20
+    routes:
+      - GET /
+      - GET /health
+      - GET /profile
+      - GET /statements
+  support:
+    upstream: http://127.0.0.1:9103
+    rate: 20
+    routes:
+      - GET /
+      - GET /health
+      - GET /tickets
+      - GET /reply-preview
+  notifications:
+    upstream: http://127.0.0.1:9104
+    rate: 20
+    routes:
+      - GET /
+      - GET /health
+      - GET /offers
+      - GET /token
+      - GET /verify

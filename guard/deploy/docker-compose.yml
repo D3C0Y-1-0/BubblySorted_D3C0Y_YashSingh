@@ -18,6 +18,24 @@ services:
     volumes: ["../bank/transaction/logs:/app/logs"]
     restart: unless-stopped
 
+  account:
+    build: ../bank/account
+    ports: ["127.0.0.1:9102:8080"]
+    volumes: ["../bank/account/logs:/app/logs"]
+    restart: unless-stopped
+
+  support:
+    build: ../bank/support
+    ports: ["127.0.0.1:9103:8080"]
+    volumes: ["../bank/support/logs:/app/logs"]
+    restart: unless-stopped
+
+  notifications:
+    build: ../bank/notifications
+    ports: ["127.0.0.1:9104:8080"]
+    volumes: ["../bank/notifications/logs:/app/logs"]
+    restart: unless-stopped
+
   # -- ELK ----------------------------------------------------------------------------------
   elasticsearch:
     image: elasticsearch:9.5.5

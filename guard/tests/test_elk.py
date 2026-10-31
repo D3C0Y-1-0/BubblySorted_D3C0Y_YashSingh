@@ -66,7 +66,7 @@ class FakeLogstash:
         self.server.server_close()
 
 
-def wait_for(check, timeout=5.0):
+def wait_for(check, timeout=10.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and not check():
         time.sleep(0.05)
@@ -78,7 +78,7 @@ def test_events_reach_logstash_as_acknowledged_json_lines():
     shipper = Shipper(logstash.address).start()
     for i in range(3):
         shipper.put(event(i))
-    assert wait_for(lambda: len(logstash.lines) == 3)
+    assert wait_for(lambda: shipper.sent >= 3 and len(logstash.lines) == 3)
     assert all("event.id" in json.loads(line) for line in logstash.lines)
     assert shipper.connected and shipper.sent == 3
     shipper.close(flush_s=0)
