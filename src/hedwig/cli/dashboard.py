@@ -38,6 +38,8 @@ from hedwig.core.agents import orchestrator
 from hedwig.core.models import CallSite, Finding, Run, ScanResult
 from hedwig.core.report import duration, seconds_text
 
+SEVERITY_FLOORS = ["", "medium", "high", "critical"]  # `s` cycles through these
+SEVERITY_FLOORS_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 SEVERITY_STYLE = {"critical": "bold red", "high": "dark_orange", "medium": "yellow", "low": "dim"}
 OWL = {
     "watching": ("green", '  ,___,\n  (o,o)\n  /)_)\n   " "'),
@@ -58,7 +60,9 @@ BORDER = {
 TABS = {"1": "overview", "2": "reports-tab", "3": "attacks-tab"}
 HELP = (
     "f fix   t take down (dry run first)   u start a down service   a approve a run   "
-    "e/c expand/collapse call sites   1 2 3 tabs   / filter   q quit"
+    "Enter on an alert opens its call sites (Esc goes back)   e/c expand/collapse   "
+    "/ type to filter   s severity   v service   r reachable only   x clear   "
+    "1 2 3 tabs   q quit"
 )
 GAUGE_FULL = 0.5  # a finding at this risk fills the gauge
 SNIPPET_CONTEXT = 3
@@ -117,7 +121,8 @@ class DashApp(App):
     #reports { height: 2fr; }
     #report-detail { height: 1fr; border: round #4a3f35; padding: 0 1; overflow-y: auto; }
     #attack-note { height: auto; padding: 0 1; color: #7f7f7f; }
-    #filter { display: none; }
+    #filter { margin: 0 0 0 0; }
+    #filter-bar { height: 1; padding: 0 1; color: #b9800f; }
     """
     BINDINGS = [
         ("f", "fix", "Fix"),
@@ -130,6 +135,11 @@ class DashApp(App):
         ("2", "tab('2')", "Reports"),
         ("3", "tab('3')", "Attacks"),
         ("/", "filter", "Filter"),
+        ("s", "severity", "Severity"),
+        ("v", "service_filter", "Service"),
+        ("r", "reachable", "Reachable"),
+        ("x", "clear_filters", "Clear"),
+        ("escape", "back", "Back"),
         ("question_mark", "help", "Help"),
         ("q", "quit", "Quit"),
     ]
@@ -141,6 +151,9 @@ class DashApp(App):
         self.result: ScanResult | None = None
         self.shown: dict[str, Finding] = {}
         self.needle = ""
+        self.floor = ""  # lowest severity shown
+        self.only_service = ""
+        self.only_reachable = False
         self.fixing: set[str] = set()
         self.status: dict[str, str] = {}
         self.infra: dict[str, str] = {}
@@ -159,18 +172,23 @@ class DashApp(App):
         yield Horizontal(id="cards")
         yield Static(id="infra")
         with TabbedContent(initial="overview", id="tabs"):
-            with TabPane("Overview", id="overview"), Horizontal():
-                yield DataTable(id="alerts", cursor_type="row")
-                with Vertical(id="right"):
-                    yield Static("Select an alert.", id="detail")
-                    yield Tree("reachability", id="reach")
+            with TabPane("Overview", id="overview"), Vertical():
+                yield Input(
+                    placeholder="/ filter alerts: type part of an id, service or package",
+                    id="filter",
+                )
+                yield Static(id="filter-bar")
+                with Horizontal():
+                    yield DataTable(id="alerts", cursor_type="row")
+                    with Vertical(id="right"):
+                        yield Static("Select an alert.", id="detail")
+                        yield Tree("reachability", id="reach")
             with TabPane("Reports", id="reports-tab"), Vertical():
                 yield DataTable(id="reports", cursor_type="row")
                 yield Static("Select a report.", id="report-detail")
             with TabPane("Attacks", id="attacks-tab"), Vertical():
                 yield Static(id="attack-note")
                 yield DataTable(id="attacks", cursor_type="row")
-        yield Input(placeholder="filter alerts", id="filter")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -342,6 +360,12 @@ class DashApp(App):
             haystack = f"{f.id} {f.service} {f.package} {f.severity}".lower()
             if self.needle and self.needle not in haystack:
                 continue
+            if self.floor and SEVERITY_FLOORS_ORDER[f.severity] < SEVERITY_FLOORS_ORDER[self.floor]:
+                continue
+            if self.only_service and f.service != self.only_service:
+                continue
+            if self.only_reachable and f.reachability != "called":
+                continue
             key = f"{f.service}|{f.id}|{f.package}"
             self.shown[key] = f
             style = SEVERITY_STYLE[f.severity]
@@ -355,6 +379,7 @@ class DashApp(App):
                 f.decision.action,
                 key=key,
             )
+        self.update_filter_bar()
         self.refresh_header()
 
     @staticmethod
@@ -530,15 +555,61 @@ class DashApp(App):
         self.query_one(TabbedContent).active = TABS[number]
 
     def action_filter(self) -> None:
-        box = self.query_one("#filter", Input)
-        box.styles.display = "block"
-        box.focus()
+        self.action_tab("1")
+        self.query_one("#filter", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "filter":  # live: the table follows every key
+            self.needle = event.value.strip().lower()
+            self.refresh_alerts()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.needle = event.value.strip().lower()
-        event.input.styles.display = "none"
         self.query_one("#alerts", DataTable).focus()
+
+    def update_filter_bar(self) -> None:
+        parts = []
+        if self.needle:
+            parts.append(f"text '{self.needle}'")
+        if self.floor:
+            parts.append(f"severity {self.floor}+")
+        if self.only_service:
+            parts.append(f"service {self.only_service}")
+        if self.only_reachable:
+            parts.append("reachable only")
+        bar = "filters: " + (", ".join(parts) if parts else "none")
+        shown = len(self.shown)
+        self.query_one("#filter-bar", Static).update(f"{bar}   ({shown} shown)")
+
+    def action_severity(self) -> None:
+        index = SEVERITY_FLOORS.index(self.floor)
+        self.floor = SEVERITY_FLOORS[(index + 1) % len(SEVERITY_FLOORS)]
         self.refresh_alerts()
+
+    def action_service_filter(self) -> None:
+        names = ["", *self.specs]
+        index = names.index(self.only_service) if self.only_service in names else 0
+        self.only_service = names[(index + 1) % len(names)]
+        self.refresh_alerts()
+
+    def action_reachable(self) -> None:
+        self.only_reachable = not self.only_reachable
+        self.refresh_alerts()
+
+    def action_clear_filters(self) -> None:
+        self.needle, self.floor, self.only_service, self.only_reachable = "", "", "", False
+        self.query_one("#filter", Input).value = ""
+        self.refresh_alerts()
+
+    def action_back(self) -> None:
+        """Esc: from the call-site tree or the filter box back to the alerts table."""
+        self.query_one("#alerts", DataTable).focus()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Enter on an alert moves into its call-site tree."""
+        if event.data_table.id == "alerts" and self.selected_finding():
+            tree = self.query_one("#reach", Tree)
+            tree.focus()
+            tree.move_cursor(tree.root.children[0] if tree.root.children else tree.root)
 
     def action_fix(self) -> None:
         finding = self.selected_finding()

@@ -15,16 +15,27 @@ import smtplib
 import ssl
 import threading
 import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any
 
 REPORTABLE = {"blocked", "banned", "trapped"}  # a decision worth telling the PM about
 
 
 MAX_ATTACKERS = 10
+
+
+def _hedwig_settings() -> dict[str, str]:
+    """Hedwig's saved settings, if there are any (a plain TOML file of strings)."""
+    path = Path.home() / ".hedwig" / "config.toml"
+    try:
+        return {k: str(v) for k, v in tomllib.loads(path.read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError):
+        return {}
 
 
 def _when(stamp: str | None) -> str:
@@ -81,14 +92,20 @@ class SmtpConfig:
 
     @classmethod
     def from_env(cls) -> "SmtpConfig":
+        """The environment first, then Hedwig's ~/.hedwig/config.toml, so the demo is set up in
+        one place (`hedwig config`). `to` may hold several addresses, comma separated."""
         env = os.environ.get
+        saved = _hedwig_settings()
+        user = env("SMTP_USER", "") or saved.get("smtp_user", "")
         return cls(
-            host=env("SMTP_HOST", ""),
-            port=int(env("SMTP_PORT", "587") or "587"),
-            user=env("SMTP_USER", ""),
-            password=env("SMTP_PASS", ""),
-            to=env("PM_EMAIL", ""),
-            sender=env("SMTP_FROM", "") or env("SMTP_USER", ""),
+            host=env("SMTP_HOST", "")
+            or saved.get("smtp_host", "")
+            or ("smtp.gmail.com" if user else ""),
+            port=int(env("SMTP_PORT", "") or saved.get("smtp_port", "") or 587),
+            user=user,
+            password=env("SMTP_PASS", "") or saved.get("smtp_pass", ""),
+            to=env("PM_EMAIL", "") or saved.get("pm_email", ""),
+            sender=env("SMTP_FROM", "") or user,
         )
 
     @property

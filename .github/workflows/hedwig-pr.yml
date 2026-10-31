@@ -1,6 +1,6 @@
 name: hedwig-pr
 
-# Comment `/hedwig scan` on a pull request and the bot replies with the vulnerabilities the
+# Comment `/hedwig scan` (or `:hedwig scan`, `@hedwig scan`) on a pull request and the bot replies with the vulnerabilities the
 # pull request introduces. issue_comment workflows always run from the default branch, so this
 # file only takes effect once it is on main.
 on:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   scan:
-    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/hedwig scan')
+    if: github.event.issue.pull_request && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, 'hedwig scan')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

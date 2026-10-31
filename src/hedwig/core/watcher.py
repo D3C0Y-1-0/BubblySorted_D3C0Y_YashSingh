@@ -45,6 +45,12 @@ class MergedPR:
     head_ref: str
     merge_sha: str
     files: list[str] = field(default_factory=list)
+    base_sha: str = ""  # compare against this commit instead of the merge commit's first parent
+
+    @property
+    def label(self) -> str:
+        """'PR #4', or 'commit abc1234' for a change that was pushed without a PR."""
+        return f"PR #{self.number}" if self.number else f"commit {self.merge_sha[:7]}"
 
 
 def load_state(root: Path) -> dict | None:
@@ -168,7 +174,7 @@ def handle_service(
 ) -> Incident:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     incident = Incident(
-        incident_id=f"{stamp}-{spec.name}-pr{pr.number}",
+        incident_id=f"{stamp}-{spec.name}-" + (f"pr{pr.number}" if pr.number else pr.merge_sha[:7]),
         service=spec.name,
         pr_number=pr.number,
         pr_url=pr.url,
@@ -176,14 +182,17 @@ def handle_service(
         merged_by=pr.merged_by,
         findings=found,
     )
-    incidents.event(incident, "PR merged", f"#{pr.number} {pr.title} by {pr.merged_by}",
-                    at=pr.merged_at[:19] + "+00:00")  # fmt: skip
+    incidents.event(
+        incident, "PR merged" if pr.number else "change pushed",
+        f"{'#' + str(pr.number) + ' ' if pr.number else ''}{pr.title} by {pr.merged_by}",
+        at=pr.merged_at[:19] + "+00:00",
+    )  # fmt: skip
     ids = ", ".join(sorted({f.id for f in found})[:4])
     incidents.event(
         incident, "vulnerable merge detected", f"{len(found)} finding(s): {ids}", at=detected
     )
     incidents.save(root, incident)
-    say(f"[bold]{spec.name}[/bold]: PR #{pr.number} introduced {len(found)} finding(s) ({ids})")
+    say(f"[bold]{spec.name}[/bold]: {pr.label} introduced {len(found)} finding(s) ({ids})")
 
     if local_error:
         # Without the merged code here Hedwig cannot fix anything, so it must not take the
@@ -195,7 +204,7 @@ def handle_service(
 
     decision = policy.decide_incident(spec.allow)
     if decision.action == "takedown":
-        note = actions.takedown(root, spec.name, f"vulnerable PR #{pr.number} merged")
+        note = actions.takedown(root, spec.name, f"vulnerable change ({pr.label}) merged")
         incidents.event(incident, "service taken down", note)
         say(f"  {spec.name} taken down ({note})")
     else:
@@ -259,13 +268,14 @@ def respond(
     touched = affected_services(repo, specs, pr)
     if not touched:
         return []
-    parent = runner.git(repo, "rev-parse", f"{pr.merge_sha}^1")
+    before = pr.base_sha or f"{pr.merge_sha}^1"
+    parent = runner.git(repo, "rev-parse", before)
     if parent.returncode != 0:
-        say(f"PR #{pr.number}: merge commit {pr.merge_sha[:7]} is not here yet, fetching")
+        say(f"{pr.label}: commit {pr.merge_sha[:7]} is not here yet, fetching")
         runner.git(repo, "fetch", "origin", pr.base_ref)
-        parent = runner.git(repo, "rev-parse", f"{pr.merge_sha}^1")
+        parent = runner.git(repo, "rev-parse", before)
     if parent.returncode != 0:
-        say(f"[red]PR #{pr.number}: cannot find its commits locally[/red]")
+        say(f"[red]{pr.label}: cannot find its commits locally[/red]")
         return []
     relative = root.resolve().relative_to(repo).as_posix() or "."
     found = prcheck.at_least(
@@ -276,11 +286,11 @@ def respond(
     found = [f for f in found if f.service in touched_names]
     flagged = [f for f in found if f.kind in ("typosquat", "install-script")]
     for f in flagged:  # heuristics need a human: say so, but never take a service down for them
-        say(f"[yellow]PR #{pr.number}: {f.service}: {f.summary}[/yellow]")
+        say(f"[yellow]{pr.label}: {f.service}: {f.summary}[/yellow]")
         audit.record(root, "flagged", pr=pr.number, service=f.service, id=f.id, kind=f.kind)
     found = [f for f in found if f not in flagged]
     if not found:
-        say(f"PR #{pr.number} '{pr.title}': introduced nothing vulnerable")
+        say(f"{pr.label} '{pr.title}': introduced nothing vulnerable")
         return []
     error = update_local(repo, pr.base_ref)
     if error:
@@ -339,6 +349,66 @@ def watch(
             except Exception as err:  # one bad PR must not stop the watch
                 say(f"[red]PR #{pr.number}: {type(err).__name__}: {err}[/red]")
             state["seen"].append(pr.number)
+            save_state(root, state)
+        if once:
+            return
+        time.sleep(interval)
+
+
+def _branch_change(repo: Path, slug: str | None, branch: str, last: str, tip: str) -> MergedPR:
+    """Describe what landed on the branch between two commits, as a PR when GitHub knows one."""
+    subject = runner.git(repo, "log", "-1", "--format=%s", tip).stdout.strip()
+    author = runner.git(repo, "log", "-1", "--format=%an", tip).stdout.strip()
+    stamp = runner.git(repo, "log", "-1", "--format=%cI", tip).stdout.strip()
+    files = runner.git(repo, "diff", "--name-only", last, tip).stdout.split()
+    commits = set(runner.git(repo, "rev-list", f"{last}..{tip}").stdout.split())
+    base = MergedPR(0, subject, "", stamp, author, branch, "", tip, files, base_sha=last)
+    if not slug or github.unavailable(repo):
+        return base
+    try:
+        for pr in list_merged(repo, slug):
+            if pr.base_ref == branch and pr.merge_sha in commits:
+                pr.files, pr.base_sha = files or pr.files, last
+                return pr
+    except (github.GitHubError, subprocess.TimeoutExpired, OSError):
+        pass
+    return base
+
+
+def watch_branch(
+    root: Path,
+    source: AdvisorySource,
+    say: Say,
+    branch: str,
+    interval: int = 20,
+    once: bool = False,
+    min_severity: str = "low",
+    email: bool = True,
+) -> None:
+    """Watch one branch of origin: every new commit range that introduces vulnerable packages
+    (a PR merged on GitHub, or a plain git merge and push) is contained, like a merged PR."""
+    repo = prcheck.toplevel(root)
+    slug = github.origin_slug(repo)
+    state = load_state(root)
+    if state is None or state.get("branch") != branch:
+        runner.git(repo, "fetch", "-q", "origin", branch)
+        tip = runner.git(repo, "rev-parse", f"origin/{branch}")
+        if tip.returncode != 0:
+            raise github.GitHubError(f"origin has no branch '{branch}' yet")
+        state = {"branch": branch, "last": tip.stdout.strip(), "started": incidents.now()}
+        save_state(root, state)
+        say(f"Watching origin/{branch} from {state['last'][:7]}: older commits are ignored.")
+    while True:
+        runner.git(repo, "fetch", "-q", "origin", branch)
+        tip = runner.git(repo, "rev-parse", f"origin/{branch}").stdout.strip()
+        if tip and tip != state["last"]:
+            say(f"New commits on {branch}: {state['last'][:7]}..{tip[:7]}")
+            change = _branch_change(repo, slug, branch, state["last"], tip)
+            try:
+                respond(root, repo, change, source, min_severity, say, email)
+            except Exception as err:  # one bad change must not stop the watch
+                say(f"[red]{change.label}: {type(err).__name__}: {err}[/red]")
+            state["last"] = tip
             save_state(root, state)
         if once:
             return

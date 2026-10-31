@@ -17,6 +17,14 @@ def watch(
     repo: Annotated[
         str | None, typer.Option("--repo", help="owner/name (default: from origin).")
     ] = None,
+    branch: Annotated[
+        str | None,
+        typer.Option(
+            "--branch",
+            help="Watch this branch of origin for any new commit that introduces vulnerable "
+            "packages (a merged PR or a plain push), instead of watching merged PRs.",
+        ),
+    ] = None,
     interval: Annotated[int, typer.Option("--interval", help="Seconds between checks.")] = 20,
     once: Annotated[bool, typer.Option("--once", help="Check once and exit.")] = False,
     since: Annotated[
@@ -39,10 +47,17 @@ def watch(
             f"--min-severity must be one of {', '.join(prcheck.SEVERITY_ORDER)}", 2
         )
     console.print("[bold]hedwig watch[/bold]  Ctrl-C to stop")
+    source = AdvisorySource(offline=offline, directory=advisories)
     try:
+        if branch:
+            watcher.watch_branch(
+                Path.cwd(), source, lambda text: console.print(text), branch, interval, once,
+                min_severity, not no_email,
+            )  # fmt: skip
+            return
         watcher.watch(
             Path.cwd(),
-            AdvisorySource(offline=offline, directory=advisories),
+            source,
             say=lambda text: console.print(text),
             interval=interval,
             once=once,

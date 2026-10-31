@@ -193,6 +193,42 @@ def report_cmd(
         raise scan_cmd._fail(str(err), 1) from err
 
 
+def soc_report(
+    since: Annotated[str, typer.Option("--since", help="How far back, e.g. 30m, 2h, 1d.")] = "30m",
+    email: Annotated[bool, typer.Option("--email", help="Email the PDF to the PM list.")] = False,
+) -> None:
+    """Write the SOC report for an attack on the bank (from Elasticsearch or the Guard's files)."""
+    from hedwig.core import audit, soc
+
+    root = Path.cwd()
+    try:
+        pdf, data = soc.build_pdf(root, since)
+    except (report.ReportError, RuntimeError, ValueError) as err:
+        raise scan_cmd._fail(str(err), 1) from err
+    console.print(
+        f"SOC report ([bold]{data.severity}[/bold], {len(data.attackers)} attacker(s), "
+        f"{data.events} events from {data.source}): [bold]{pdf}[/bold]"
+    )
+    sent = ""
+    if email:
+        try:
+            to = report.email_pdf(
+                pdf,
+                f"[Hedwig SOC] {data.severity.upper()}: attack on the bank",
+                "Attack summary for the SOC team (PDF attached):\n\n"
+                + "\n".join(f"- {a}" for a in data.actions),
+            )
+            sent = f"emailed to {to}"
+            console.print(f"[green]{sent}[/green]")
+        except report.ReportError as err:
+            sent = f"NOT sent: {err}"
+            console.print(f"[red]SOC report {sent}[/red]")
+    audit.record(
+        root, "action", action="soc_report", service="bank", ok=bool(email and "NOT" not in sent),
+        message=f"SOC report {data.severity}; {sent or 'not emailed'}", pdf=str(pdf), reason=since,
+    )  # fmt: skip
+
+
 def dash(offline: Offline = False, advisories: Advisories = None, tier: Tier = "medium") -> None:
     """Open the terminal dashboard: services, alerts, fix runs. Press ? inside for the keys."""
     from hedwig.cli.dashboard import DashApp
@@ -272,3 +308,4 @@ def register(app: typer.Typer) -> None:
     app.command("fix")(fix)
     app.command("report")(report_cmd)
     app.command("dash")(dash)
+    app.command("soc-report")(soc_report)

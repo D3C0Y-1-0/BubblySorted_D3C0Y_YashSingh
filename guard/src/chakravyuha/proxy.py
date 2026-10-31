@@ -550,9 +550,11 @@ class Guard:
             return None
         if finding.trap:
             self.state.trap(ctx.ip)
-            self.emit("trapped", ctx, None, 6, category=finding.category, rule=finding.rule)
+            self.emit("trapped", ctx, None, 6, category=finding.category, rule=finding.rule,
+                      **(finding.detail or {}))  # fmt: skip
             return await self.maze(ctx)
-        self.emit("blocked", ctx, finding.status, 6, category=finding.category, rule=finding.rule)
+        self.emit("blocked", ctx, finding.status, 6, category=finding.category, rule=finding.rule,
+                  **(finding.detail or {}))  # fmt: skip
         return self.with_security(PlainTextResponse("Forbidden", finding.status))
 
     def inspect_response(self, ctx: rings.Ctx, status: int, headers, body: bytes):

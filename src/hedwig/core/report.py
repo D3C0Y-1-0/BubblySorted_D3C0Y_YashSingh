@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from pathlib import Path
 
-from jinja2 import Environment
+from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
 
 from hedwig import settings
@@ -54,12 +54,59 @@ _TEX_SPECIAL = {
 }
 
 
+SEVERITY_COLOR = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
+_GOOD = (
+    "merged", "verified", "rebuilt", "healthy again", "healthy", "removed", "fixed",
+    "brought up", "back up", "contained", "emailed",
+)  # fmt: skip
+_BAD = (
+    "taken down", "stopped", "failed", "down", "malware", "malicious", "ransomware",
+    "trapped", "banned", "still down", "rolled back", "compromise", "not verified",
+)  # fmt: skip
+_KEYWORDS = re.compile(
+    r"(?P<id>\b(?:CVE-\d{4}-\d+|GHSA(?:-[0-9a-z]{4}){3}|PYSEC-\d{4}-\d+|RUSTSEC-\d{4}-\d+"
+    r"|MAL-\d{4}-\d+|HEDWIG-[A-Z]+-[\w.-]+)\b)"
+    r"|(?P<word>\b(?:" + "|".join(sorted({*_GOOD, *_BAD}, key=len, reverse=True)) + r")\b)",
+    re.I,
+)
+
+
 class ReportError(Exception):
     pass
 
 
 def escape_tex(value) -> str:
     return "".join(_TEX_SPECIAL.get(ch, ch) for ch in str(value))
+
+
+def highlight(value) -> str:
+    """Escaped text with advisory ids, actions and alarming words in colour."""
+
+    def paint(match: re.Match) -> str:
+        text = match.group(0)
+        if match.group("id"):
+            return rf"\textcolor{{idcolor}}{{\textbf{{{text}}}}}"
+        colour = "good" if text.lower() in _GOOD else "bad"
+        return rf"\textcolor{{{colour}}}{{\textbf{{{text}}}}}"
+
+    return _KEYWORDS.sub(paint, escape_tex(value))
+
+
+def code(value) -> str:
+    """Escaped text that may break after . : / - @, for package names and paths in tables."""
+    return re.sub(r"([.:/@-])", r"\1\\allowbreak{}", escape_tex(value))
+
+
+def badge(severity) -> str:
+    name = str(severity).lower()
+    return rf"\badge{{{SEVERITY_COLOR.get(name, 'low')}}}{{{escape_tex(name.upper())}}}"
+
+
+def badge_state(state) -> str:
+    colour = {"contained": "good", "verified": "good", "failed": "bad", "down": "bad"}.get(
+        str(state), "note"
+    )
+    return rf"\badge{{{colour}}}{{{escape_tex(str(state).upper())}}}"
 
 
 @dataclass
@@ -82,7 +129,9 @@ def build(root: Path, target: str, result: ScanResult | None = None) -> ReportDa
             path = runs.run_dir(root, r.run_id) / "summary.txt"
             if path.is_file():
                 summaries[r.run_id] = path.read_text(encoding="utf-8").strip()
-        name = f"Incident {incident.service}: PR #{incident.pr_number}"
+        name = f"Incident {incident.service}: " + (
+            f"PR #{incident.pr_number}" if incident.pr_number else "pushed change"
+        )
         return ReportData(name, str(root), incident.findings, chosen, summaries, [incident])
     run = runs.load(root, target)
     if result is None:
@@ -143,6 +192,7 @@ def _next_steps(data: ReportData) -> list[str]:
 
 def render_tex(data: ReportData) -> str:
     env = Environment(
+        loader=FileSystemLoader(TEMPLATE.parent),
         block_start_string="((*",
         block_end_string="*))",
         variable_start_string="(((",
@@ -153,7 +203,9 @@ def render_tex(data: ReportData) -> str:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    env.filters["tex"] = escape_tex
+    env.filters.update(
+        tex=escape_tex, hl=highlight, code=code, badge=badge, badge_state=badge_state
+    )
     findings = data.findings
     counts = {
         s: sum(1 for f in findings if f.severity == s)
@@ -204,8 +256,9 @@ def render_tex(data: ReportData) -> str:
     )
     if data.incidents:
         summary = _incident_summary(data.incidents[0]) if len(data.incidents) == 1 else summary
-    template = env.from_string(TEMPLATE.read_text(encoding="utf-8"))
+    template = env.get_template(TEMPLATE.name)
     return template.render(
+        worst_color=SEVERITY_COLOR.get(worst.severity if worst else "low", "low"),
         name=data.name,
         root=data.root,
         generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
@@ -236,8 +289,9 @@ def _incident_summary(i: Incident) -> str:
         "down": "The service is STILL DOWN: the fix could not be verified or deployed.",
         "failed": "Hedwig could not respond (see the timeline); a person must act.",
     }.get(i.state, "The response is still running.")
+    what = f"Pull request #{i.pr_number}" if i.pr_number else "A change"
     return (
-        f"Pull request #{i.pr_number} ({i.pr_title}) was merged and introduced "
+        f"{what} ({i.pr_title}) was merged and introduced "
         f"{len(i.findings)} known vulnerabilities into {i.service}. Hedwig noticed on its own. "
         f"{where} Downtime: {seconds_text(i.downtime_seconds)}."
     )
@@ -263,6 +317,12 @@ def compile_pdf(root: Path, data: ReportData) -> Path:
     stem += "-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     tex = folder / f"{stem}.tex"
     tex.write_text(render_tex(data), encoding="utf-8")
+    return compile_tex(tex)
+
+
+def compile_tex(tex: Path) -> Path:
+    """Compile a .tex with tectonic (downloaded on first use). The .tex stays on failure."""
+    folder = tex.parent
     try:
         tectonic = tools.ensure_tectonic(say=lambda text: console.print(text))
     except tools.ToolError as err:
@@ -300,10 +360,14 @@ def email_pdf(pdf: Path, subject: str, body: str) -> str:
     missing = [key for key in ("smtp_user", "smtp_pass") if not values[key]]
     if missing:
         raise ReportError(f"{' and '.join(missing)} not set. Run: hedwig config")
-    user, to = values["smtp_user"], values["pm_email"]
+    user = values["smtp_user"]
+    recipients = [a.strip() for a in values["pm_email"].split(",") if a.strip()]
+    to = ", ".join(recipients)
     password = values["smtp_pass"].replace(" ", "")  # Google shows app passwords in 4 groups
-    if "@" not in to:
-        raise ReportError(f"pm_email '{to}' is not an email address. Run: hedwig config")
+    bad = [a for a in recipients if "@" not in a]
+    if not recipients or bad:
+        raise ReportError(f"pm_email '{values['pm_email']}' is not a list of email addresses. "
+                          "Run: hedwig config")  # fmt: skip
     message = EmailMessage()
     message["From"], message["To"], message["Subject"] = user, to, subject
     message.set_content(body)
@@ -381,7 +445,8 @@ def send_incident_report(root: Path, incident: Incident) -> Sent:
         data = build(root, incident.incident_id)
         pdf = compile_pdf(root, data)
         state = "contained" if incident.state == "contained" else "service still down"
-        subject = f"Hedwig incident: {incident.service} ({state}), PR #{incident.pr_number}"
+        change = f"PR #{incident.pr_number}" if incident.pr_number else "pushed change"
+        subject = f"Hedwig incident: {incident.service} ({state}), {change}"
         to = email_pdf(pdf, subject, mail_body(data))
     except ReportError as err:
         return Sent(False, str(err))

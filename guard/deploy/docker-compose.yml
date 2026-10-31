@@ -36,6 +36,35 @@ services:
     volumes: ["../bank/notifications/logs:/app/logs"]
     restart: unless-stopped
 
+  # -- infrastructure the bank would use (for the demo's infrastructure report) ------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: demo-only-not-a-secret
+      POSTGRES_DB: bank
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports: ["127.0.0.1:6333:6333"]
+    volumes: ["qdrantdata:/qdrant/storage"]
+    restart: unless-stopped
+
   # -- ELK ----------------------------------------------------------------------------------
   elasticsearch:
     image: elasticsearch:9.5.5
@@ -88,3 +117,5 @@ services:
 
 volumes:
   esdata:
+  pgdata:
+  qdrantdata:

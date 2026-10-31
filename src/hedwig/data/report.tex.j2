@@ -1,114 +1,114 @@
-\documentclass[10pt]{article}
-\usepackage[T1]{fontenc}
-\usepackage[a4paper,margin=2cm]{geometry}
-\usepackage{booktabs,longtable,array,xcolor}
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{4pt}
-\definecolor{gold}{HTML}{B9800F}
+((* include "_preamble.tex.j2" *))
 \begin{document}
 
-{\LARGE\bfseries\color{gold} Hedwig security report}\\[2pt]
-{\large (((name | tex)))}\\[2pt]
-{\small Generated (((generated | tex))) \quad Scanned folder: (((root | tex)))}
+\noindent\colorbox{brand}{\parbox{\dimexpr\textwidth-2\fboxsep}{%
+\vspace{4pt}{\color{white}\Huge\bfseries Hedwig security report}\\[3pt]
+{\color{brandlight}\Large (((name | tex)))}\\[2pt]
+{\color{brandlight}\small Generated (((generated | tex))) \quad Folder: \texttt{(((root | code)))}}\vspace{4pt}}}
 
-\section*{Summary}
-(((summary | tex)))
+\vspace{6pt}
+\begin{tcolorbox}[colback=((( worst_color )))!8,colframe=((( worst_color ))),title={\bfseries Summary}, breakable]
+(((summary | hl)))
+\end{tcolorbox}
 
-\begin{tabular}{@{}ll@{}}
-Findings & (((findings | length))) \\
-Critical / high & (((counts.critical))) / (((counts.high))) \\
-Medium / low & (((counts.medium))) / (((counts.low))) \\
-Exploited in the wild (KEV) & (((kev_count))) \\
-Fix runs & (((runs | length))) \\
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{*{5}{>{\centering\arraybackslash}p{3cm}}}
+\cellcolor{critical}\color{white}\textbf{(((counts.critical)))}\newline critical &
+\cellcolor{high}\color{white}\textbf{(((counts.high)))}\newline high &
+\cellcolor{medium}\textbf{(((counts.medium)))}\newline medium &
+\cellcolor{low}\color{white}\textbf{(((counts.low)))}\newline low &
+\cellcolor{bad}\color{white}\textbf{(((kev_count)))}\newline exploited (KEV) \\
 \end{tabular}
+\end{center}
 
 ((* if incidents *))
-\section*{Incident timeline}
+\section{Incident timeline}
 ((* for i in incidents *))
-Pull request \#(((i.pr_number))) (((i.pr_title | tex))), merged by (((i.merged_by | tex))). Downtime: \textbf{(((i.downtime_text | tex)))}. State: \emph{(((i.state | tex)))}.
+((* if i.pr_number *))Pull request \textbf{\#(((i.pr_number)))}((* else *))A pushed change((* endif *)) ``(((i.pr_title | tex)))'', by \textbf{(((i.merged_by | tex)))}.
+Downtime: \textbf{(((i.downtime_text | tex)))}. State: ((( i.state | badge_state ))).
 
 \small
-\begin{longtable}{@{}p{4.2cm}p{4.6cm}p{7.6cm}@{}}
-\toprule
-Time (UTC) & Event & Detail \\
-\midrule
+\begin{longtable}{@{}p{3.7cm}p{4.2cm}p{7.9cm}@{}}
+\headrow \hd{Time (UTC)} & \hd{Event} & \hd{Detail} \\
 \endhead
+\rowcolors{1}{white}{rowgrey}
 ((* for e in i.rows *))
-(((e.when | tex))) & (((e.event | tex))) & (((e.detail | tex))) \\
+(((e.when | tex))) & (((e.event | hl))) & (((e.detail | hl))) \\
 ((* endfor *))
-\bottomrule
 \end{longtable}
 \normalsize
 ((* endfor *))
 ((* endif *))
 
 ((* if findings *))
-\section*{Findings, ranked by risk}
+\section{Findings, ranked by risk}
 \small
-\begin{longtable}{@{}p{1.9cm}p{1.3cm}p{1.1cm}p{2.6cm}p{3.4cm}p{1.3cm}p{1.6cm}@{}}
-\toprule
-Severity & Risk & Evid. & Service & Package & KEV & Action \\
-\midrule
+\begin{longtable}{@{}p{2cm}p{1cm}p{0.8cm}p{2.5cm}p{5.2cm}p{1cm}p{2cm}@{}}
+\headrow \hd{Severity} & \hd{Risk} & \hd{Ev.} & \hd{Service} & \hd{Package} & \hd{KEV} & \hd{Action} \\
 \endhead
+\rowcolors{1}{white}{rowgrey}
 ((* for f in findings *))
-(((f.severity | tex))) & (((f.risk_text))) & (((f.evidence_level))) & (((f.service | tex))) &
-(((f.package | tex)))@(((f.version | tex))) & (((f.kev_text))) & (((f.decision.action | tex))) \\
+(((f.severity | badge))) & (((f.risk_text))) & (((f.evidence_level))) & \textbf{(((f.service | tex)))} &
+\raggedright\texttt{(((f.package | code)))@(((f.version | code)))} & (((f.kev_text | hl))) & (((f.decision.action | hl))) \\
 ((* endfor *))
-\bottomrule
 \end{longtable}
 \normalsize
 
-\section*{Why each finding ranks where it does}
+\section{Why each finding ranks where it does}
 \begin{itemize}
 ((* for f in top *))
-\item \textbf{(((f.id | tex)))} (((f.package | tex)))@(((f.version | tex))) in (((f.service | tex))): (((f.reasoning | tex)))
+\item \textbf{(((f.id | hl)))} \texttt{(((f.package | code)))@(((f.version | code)))} in \textbf{(((f.service | tex)))}: (((f.reasoning | hl)))
 ((* endfor *))
 \end{itemize}
 
-\section*{Evidence and reachability}
+\section{Evidence and reachability}
 \begin{itemize}
 ((* for f in top *))
-\item \textbf{(((f.id | tex)))}: (((f.evidence_text | tex))). Reachability: (((f.reachability | tex)))((* if f.call_sites *)) (called in (((f.call_sites[0].function | tex)))() at (((f.call_sites[0].file | tex))):(((f.call_sites[0].line))))((* endif *)).
-((* if f.attacks *)) Attacks seen in logs: (((f.attacks | join(", ") | tex))).((* endif *))
-((* if f.compromise *)) \textbf{Signs of compromise were found in the service logs.}((* endif *))
+\item \textbf{(((f.id | hl)))}: (((f.evidence_text | hl))). Reachability: \textbf{(((f.reachability | tex)))}((* if f.call_sites *)) (called in \texttt{(((f.call_sites[0].function | code)))()} at \texttt{(((f.call_sites[0].file | code))):(((f.call_sites[0].line)))})((* endif *)).
+((* if f.attacks *)) Attacks seen in logs: (((f.attacks | join(", ") | hl))).((* endif *))
+((* if f.compromise *)) \textcolor{bad}{\textbf{Signs of compromise were found in the service logs.}}((* endif *))
 ((* endfor *))
 \end{itemize}
 ((* else *))
-\section*{Findings}
+\section{Findings}
 No known vulnerabilities were found.
 ((* endif *))
 
-\section*{Action taken}
+\section{Actions taken}
 ((* if runs *))
+\begin{tcolorbox}[colback=good!7,colframe=good,title={\bfseries What Hedwig did},breakable]
 \begin{itemize}
 ((* for r in runs *))
-\item \textbf{(((r.service | tex))) / (((r.package | tex)))} (((r.from_version | tex))) to (((r.to_version_text | tex))):
-state \emph{(((r.state | tex)))}, outcome \emph{(((r.action_text | tex)))}.
+\item \textbf{(((r.service | tex))) / (((r.package | tex)))} \texttt{(((r.from_version | tex)))} $\rightarrow$ \texttt{(((r.to_version_text | tex)))}:
+state ((( r.state | badge_state ))), outcome \textbf{(((r.action_text | hl)))}.
 ((* if r.branch *)) Branch \texttt{(((r.branch | tex)))}.((* endif *))
-((* if r.violations *)) Failed at (((r.failed_step | tex))): (((r.violations | join("; ") | tex))).((* endif *))
-((* if r.summary *)) (((r.summary | tex)))((* endif *))
+((* if r.violations *)) \textcolor{bad}{Failed at (((r.failed_step | tex))):} (((r.violations | join("; ") | hl))).((* endif *))
+((* if r.summary *)) (((r.summary | hl)))((* endif *))
 ((* endfor *))
 \end{itemize}
+\end{tcolorbox}
 
-\section*{Time to action}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Service / package & Started & Time to action \\
-\midrule
+\section{Time to action}
+\begin{longtable}{@{}p{5cm}p{6cm}p{3.8cm}@{}}
+\headrow \hd{Service / package} & \hd{Started (UTC)} & \hd{Time to action} \\
+\endhead
+\rowcolors{1}{white}{rowgrey}
 ((* for r in runs *))
-(((r.service | tex))) / (((r.package | tex))) & (((r.started_at | tex))) & (((r.duration | tex))) \\
+\textbf{(((r.service | tex)))} / (((r.package | tex))) & (((r.started_at | tex))) & \textbf{(((r.duration | tex)))} \\
 ((* endfor *))
-\bottomrule
-\end{tabular}
+\end{longtable}
 ((* else *))
 No fix has been run for this report yet.
 ((* endif *))
 
-\section*{Next steps}
+\section{Next steps}
+\begin{tcolorbox}[colback=note!6,colframe=note,title={\bfseries What needs doing},breakable]
 \begin{itemize}
 ((* for step in next_steps *))
-\item (((step | tex)))
+\item (((step | hl)))
 ((* endfor *))
 \end{itemize}
+\end{tcolorbox}
 
 \end{document}

@@ -23,22 +23,81 @@
       <span class="pill" id="uptime">0s</span>
       <span class="pill" id="agents" title="Scout, Commander, Illusionist">agents: rules</span>
       <span class="pill" id="elk" title="Logstash / Elasticsearch">ELK: off</span>
+      <a class="pill link" id="kibana" href="http://127.0.0.1:5601/app/dashboards" target="_blank"
+         rel="noopener" title="Search every event in Kibana">Open Kibana</a>
+      <button class="pill link" id="soc-open" type="button" title="SOC reports">SOC report</button>
       <span class="pill conn" id="conn">connecting</span>
     </div>
   </header>
   <div id="alarm" class="alarm" role="alert" hidden></div>
 
+  <section class="hedwig-top">
+    <div class="panel arch">
+      <div class="panel-head">
+        <h2>Bank architecture</h2>
+        <span class="note" id="arch-note"></span>
+      </div>
+      <div class="arch-flow">
+        <div class="guard-node" title="The Chakravyuha Guard: every request passes it">
+          <b>Guard</b><span>7 rings</span>
+        </div>
+        <span class="flow-arrow" aria-hidden="true">&rarr;</span>
+        <div id="arch" class="arch-grid"></div>
+      </div>
+    </div>
+    <div class="panel infra">
+      <div class="panel-head"><h2>Infrastructure</h2></div>
+      <ul id="infra" class="infra-list"></ul>
+    </div>
+  </section>
+
+  <section class="panel hedwig">
+    <div class="panel-head">
+      <h2>Vulnerabilities &amp; fixes</h2>
+      <div class="filters">
+        <input id="h-text" type="search" placeholder="Filter: id, package, service" autocomplete="off">
+        <select id="h-sev" aria-label="Severity">
+          <option value="">Any severity</option><option value="medium">medium and up</option>
+          <option value="high">high and up</option><option value="critical">critical only</option>
+        </select>
+        <select id="h-svc" aria-label="Service"><option value="">All services</option></select>
+        <label class="chk"><input id="h-reach" type="checkbox"> reachable only</label>
+        <button id="h-clear" type="button">Clear</button>
+        <button id="h-scan" type="button" title="Run hedwig scan (needs the token below)">Rescan</button>
+        <span id="h-count" class="note"></span>
+      </div>
+    </div>
+    <div class="hedwig-body">
+      <div class="table-wrap short">
+        <table>
+          <thead><tr>
+            <th>Severity</th><th>Risk</th><th>Service</th><th>Package</th><th>Advisory</th>
+            <th>Reach</th><th>Decision</th>
+          </tr></thead>
+          <tbody id="h-rows"></tbody>
+        </table>
+      </div>
+      <div id="h-detail" class="detail"><p class="empty">Select a finding.</p></div>
+    </div>
+    <div class="h-lower">
+      <div><h2>Incidents &amp; fix runs</h2><ol id="h-incidents" class="feed"></ol></div>
+      <div><h2>Hedwig activity</h2><ol id="h-log" class="feed"></ol></div>
+    </div>
+  </section>
+
+  <div id="svc-report" class="modal" hidden>
+    <div class="modal-body">
+      <button id="svc-close" class="close" type="button" aria-label="Close">&times;</button>
+      <h2 id="svc-title"></h2>
+      <div id="svc-content"></div>
+    </div>
+  </div>
+
   <main class="grid">
     <section class="panel formation">
       <svg id="rings" viewBox="-500 -500 1000 1000" role="img"
            aria-label="Seven rings of the formation with a dot per client"></svg>
-      <div class="legend">
-        <span><i class="sw s0"></i>calm</span>
-        <span><i class="sw s3"></i>tarpit</span>
-        <span><i class="sw s5"></i>hard challenge</span>
-        <span><i class="sw s10"></i>trap</span>
-        <span><i class="sw tablet"></i>allowlisted (demo browser)</span>
-      </div>
+      <div class="legend" id="legend" aria-label="Dot colour is the type of attack"></div>
       <div id="tip" class="tip" hidden></div>
     </section>
 
@@ -130,5 +189,6 @@
     </section>
   </main>
   <script src="/static/app.js"></script>
+  <script src="/static/hedwig.js"></script>
 </body>
 </html>

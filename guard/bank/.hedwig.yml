@@ -16,7 +16,7 @@ services:
     - auto_merge_if_verified
     - rollback
     - takedown
-    test_cmd: ./mvnw -q -o test
+    test_cmd: ./mvnw -q test
     log_path: transaction/logs/access.log
     health_path: /health
     port: 8080

@@ -73,3 +73,36 @@ async def test_brute_force_trip_is_not_counted_as_an_extra_request(make_guard):
             await c.post("/transaction/login", json=body, headers=BROWSER)
     data = snapshot(guard)
     assert data["totals"]["requests"] == 8 and data["passwords"] == 8 and data["traps"] == 1
+
+
+async def test_hedwig_panel_reads_the_bank_folder_and_snippets_stay_inside_it(make_guard, tmp_path):
+    bank = tmp_path / "bank"
+    (bank / ".hedwig").mkdir(parents=True)
+    (bank / "transaction").mkdir()
+    (bank / "transaction" / "App.java").write_text("a\nb\nc\nd\n")
+    finding = {
+        "id": "CVE-1", "severity": "high", "risk": 0.3, "service": "transaction",
+        "package": "x", "version": "1", "decision": {"action": "fix"}, "kind": "vulnerability",
+        "call_sites": [{"file": "App.java", "line": 2, "function": "f", "symbol": "x.y"}],
+    }  # fmt: skip
+    scan = {"generated_at": "now", "findings": [finding]}
+    (bank / ".hedwig" / "last-scan.json").write_text(json.dumps(scan))
+    guard, *_ = make_guard(bank_root=str(bank))
+    app = create_dashboard(guard)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://d") as c:
+        data = (await c.get("/api/hedwig")).json()
+        inside = (
+            await c.get(
+                "/api/snippet", params={"service": "transaction", "file": "App.java", "line": 2}
+            )
+        ).json()
+        outside = (
+            await c.get(
+                "/api/snippet",
+                params={"service": "transaction", "file": "../../../etc/passwd", "line": 1},
+            )
+        ).json()
+        refused = await c.post("/api/run/scan")  # no token
+    assert data["findings"][0]["id"] == "CVE-1" and data["findings"][0]["decision"] == "fix"
+    assert [line["n"] for line in inside["lines"] if line["hit"]] == [2]
+    assert outside["lines"] == [] and refused.status_code == 401

@@ -29,22 +29,28 @@ def one_attempt(args) -> int:
         return r.status_code
 
 
+def run(n: int = 500, user: str = "demo", workers: int = 32) -> dict[int, int]:
+    """The attack: returns how many attempts got each status code."""
+    addresses = ips(n)
+    print(f"solving {len(addresses)} challenges...")
+    cookies = sessions(addresses)
+    jobs = [(ip, cookies.get(ip), user, i) for i, ip in enumerate(addresses)]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        codes = list(pool.map(one_attempt, jobs))
+    seen: dict[int, int] = {}
+    for code in codes:
+        seen[code] = seen.get(code, 0) + 1
+    print(f"{len(codes)} attempts from {len(jobs)} addresses: {seen}")
+    return seen
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--n", type=int, default=500)
     parser.add_argument("--user", default="demo")
     parser.add_argument("--workers", type=int, default=32)
     args = parser.parse_args()
-    addresses = ips(args.n)
-    print(f"solving {len(addresses)} challenges...")
-    cookies = sessions(addresses)
-    jobs = [(ip, cookies.get(ip), args.user, i) for i, ip in enumerate(addresses)]
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        codes = list(pool.map(one_attempt, jobs))
-    seen: dict[int, int] = {}
-    for code in codes:
-        seen[code] = seen.get(code, 0) + 1
-    print(f"{len(codes)} attempts from {len(jobs)} addresses: {seen}")
+    run(args.n, args.user, args.workers)
     print("watch the Scout name the campaign within a few seconds")
 
 

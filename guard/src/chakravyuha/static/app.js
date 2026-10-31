@@ -24,6 +24,20 @@ const COLORS = [
   [10, [255, 61, 90]],
 ];
 
+// Dot colour is the type of attack the client was last caught doing.
+const CATEGORY = {
+  ddos: ["flood (DDoS)", "#ff8a3d"],
+  bruteforce: ["brute force", "#ff3d5a"],
+  probe: ["scanning / probing", "#f5c542"],
+  payload: ["exploit payload", "#a77bf3"],
+  malware: ["malware / ransomware", "#ff4fd8"],
+  phishing: ["phishing", "#36d1dc"],
+  challenge: ["failed challenge", "#6c8ebf"],
+  trap: ["in the decoy bank", "#7e57c2"],
+  honeytoken: ["honeytoken used", "#ffd700"],
+};
+const lastCategory = new Map(); // ip -> attack category
+
 const $ = (id) => document.getElementById(id);
 const svg = $("rings");
 const dots = new Map(); // ip -> { el, data }
@@ -130,6 +144,11 @@ function flashRing(ring) {
   entry.timer = setTimeout(() => entry.warriors.classList.remove("flash"), 260);
 }
 
+function sparkColor(event) {
+  const entry = CATEGORY[event["event.category"]];
+  return entry ? entry[1] : color(event["hedwig.suspicion"] || 0);
+}
+
 function spark(event) {
   // a request travelling inward from outside the formation to where it was decided
   if (sparks >= SPARKS_MAX) return;
@@ -139,7 +158,7 @@ function spark(event) {
   const target = stopped ? radiusFor(event.ring) || CORE_R : 10;
   const [x0, y0] = xy(OUTSIDE_R, a);
   const [x1, y1] = xy(target, a);
-  const dot = el("circle", { r: 4, class: "spark", fill: color(event["hedwig.suspicion"] || 0) });
+  const dot = el("circle", { r: 4, class: "spark", fill: sparkColor(event) });
   dot.style.transform = `translate(${x0}px, ${y0}px)`;
   dot.style.transition = "transform 0.55s ease-in, opacity 0.4s 0.55s";
   layers.sparks.appendChild(dot);
@@ -155,6 +174,45 @@ function spark(event) {
     sparks--;
     if (stopped) flashRing(event.ring);
   }, 1000);
+}
+
+function noteAttacks(batch) {
+  for (const e of batch) {
+    const ip = e["source.ip"], cat = e["event.category"];
+    if (ip && CATEGORY[cat] && STOPPED.has(e["event.action"]) && !e["hedwig.monitor"]) {
+      if (cat !== "trap" || !lastCategory.has(ip)) lastCategory.set(ip, cat);
+    }
+  }
+  if (window.trackEvents) window.trackEvents(batch);
+}
+
+function dotColor(c) {
+  const cat = lastCategory.get(c.ip);
+  return cat && !c.allowlisted ? CATEGORY[cat][1] : color(c.suspicion);
+}
+
+function buildLegend() {
+  const box = $("legend");
+  const title = document.createElement("h2");
+  title.textContent = "Dot colour = attack";
+  box.appendChild(title);
+  for (const [, [label, colour]] of Object.entries(CATEGORY)) {
+    const row = document.createElement("span");
+    const sw = document.createElement("i");
+    sw.className = "sw";
+    sw.style.background = colour;
+    row.append(sw, label);
+    box.appendChild(row);
+  }
+  const calm = document.createElement("span");
+  const sw = document.createElement("i");
+  sw.className = "sw s0";
+  calm.append(sw, "not attacking yet");
+  const tablet = document.createElement("span");
+  const sw2 = document.createElement("i");
+  sw2.className = "sw tablet";
+  tablet.append(sw2, "allowlisted (demo browser)");
+  box.append(calm, tablet);
 }
 
 function updateDots(clients) {
@@ -175,7 +233,7 @@ function updateDots(clients) {
     if (entry.el.parentNode !== layer) layer.appendChild(entry.el);
     const [x, y] = xy(p.r, p.a);
     entry.el.style.transform = `translate(${x}px, ${y}px)`;
-    entry.el.setAttribute("fill", color(c.suspicion));
+    entry.el.setAttribute("fill", dotColor(c));
     entry.el.setAttribute("r", c.allowlisted ? 9 : 7);
     entry.el.classList.toggle("tablet", c.allowlisted);
     entry.el.classList.toggle("banned", c.banned);
@@ -295,6 +353,7 @@ function applySnapshot(s) {
   updateDots(s.clients);
   if (s.events) {
     logEvents = s.events.slice(-LOG_MAX);
+    noteAttacks(logEvents);
     renderLog();
   }
 }
@@ -495,6 +554,7 @@ function renderLog() {
 function addEvents(batch) {
   logEvents.push(...batch);
   if (logEvents.length > LOG_MAX) logEvents = logEvents.slice(-LOG_MAX);
+  noteAttacks(batch);
   batch.slice(-40).forEach(spark);
   if (paused) return;
   if (batch.length > 20) return renderLog();
@@ -532,5 +592,6 @@ $("c-set-level").addEventListener("click", () => sendControl({ action: "level", 
 $("c-rotate").addEventListener("click", () => sendControl({ action: "rotate_tokens" }));
 
 buildFormation();
+buildLegend();
 renderBars({});
 connect();

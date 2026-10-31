@@ -1,0 +1,123 @@
+((* include "_preamble.tex.j2" *))
+\begin{document}
+
+\noindent\colorbox{((( severity_color )))}{\parbox{\dimexpr\textwidth-2\fboxsep}{%
+\vspace{4pt}{\color{white}\Huge\bfseries SOC incident report}\\[3pt]
+{\color{white}\Large Attack on the bank: ((( d.severity | upper )))}\\[2pt]
+{\color{white}\small Window (((d.since | tex))) to (((d.until | tex))) \quad Source: (((d.source | tex))) \quad Generated (((generated | tex)))}\vspace{4pt}}}
+
+\vspace{6pt}
+\begin{tcolorbox}[colback=((( severity_color )))!8,colframe=((( severity_color ))),title={\bfseries Executive summary},breakable]
+((* if d.attackers *))
+\textbf{(((d.attackers | length)))} attacking source((( 's' if d.attackers | length != 1 else '' ))) were stopped by the Guard in this window
+((* set trapped = d.attackers | selectattr('trapped_at') | list | length *))
+((* set banned = d.attackers | selectattr('banned_at') | list | length *))
+(\textbf{(((trapped)))} trapped in the decoy bank, \textbf{(((banned)))} banned).
+((* if d.honeytokens *))
+A honeytoken was used, which proves the attacker acted on what the decoy showed it.
+((* endif *))
+((* set planted = d.attackers | map(attribute='files') | map('length') | sum *))
+((* if planted *))\textbf{(((planted)))} planted file((( 's' if planted != 1 else '' ))) were identified (hashes below).((* endif *))
+No attacker reached a real service: every request was stopped or answered by the decoy.
+((* else *))
+No attack activity was found in this window.
+((* endif *))
+\end{tcolorbox}
+
+((* if d.attackers *))
+\section{Attackers}
+\small
+\begin{longtable}{@{}p{2.4cm}p{2.6cm}p{2.6cm}p{3cm}p{1.4cm}p{3.6cm}@{}}
+\headrow \hd{Source IP} & \hd{First seen (UTC)} & \hd{Trapped} & \hd{Banned} & \hd{Stopped} & \hd{Caught by} \\
+\endhead
+\rowcolors{1}{white}{rowgrey}
+((* for a in d.attackers *))
+\texttt{(((a.ip | tex)))} & (((a.first[11:19] | tex))) &
+((* if a.trapped_at *))\textcolor{bad}{\textbf{(((a.trapped_at[11:19] | tex)))}}((* else *))--((* endif *)) &
+((* if a.banned_at *))\textcolor{bad}{\textbf{(((a.banned_at[11:19] | tex))) until (((a.banned_until | tex)))}}((* else *))--((* endif *)) &
+(((a.stopped))) \,+\, (((a.decoy))) decoy &
+\raggedright (((a.rules.most_common(3) | map('first') | join(', ') | hl))) \\
+((* endfor *))
+\end{longtable}
+\normalsize
+
+\section{Indicators of compromise}
+((* for a in d.attackers *))
+\begin{tcolorbox}[colback=white,colframe=low,title={\bfseries \texttt{(((a.ip | tex)))}},breakable,fonttitle=\small]
+\small
+\textbf{Targets:} (((a.targets.most_common(4) | map('first') | join('; ') | code)))\\
+((* if a.agents *))\textbf{User agents:} (((a.agents | list | join('; ') | code)))\\((* endif *))
+((* if a.users *))\textbf{Accounts targeted:} (((a.users | list | join(', ') | tex))); \textbf{distinct passwords tried:} (((a.passwords | length)))\\((* endif *))
+\textbf{Rules hit:} (((a.rules.most_common() | map('first') | join(', ') | hl)))
+((* if a.files *))
+\vspace{2pt}
+
+\textbf{Planted files (SHA-256):}
+\begin{itemize}\setlength\itemsep{0pt}
+((* for sha, name in a.files.items() *))
+\item \texttt{\footnotesize (((sha[:32])))\allowbreak(((sha[32:])))} \quad (((name | code)))
+((* endfor *))
+\end{itemize}
+((* endif *))
+\end{tcolorbox}
+((* endfor *))
+((* endif *))
+
+((* if d.honeytokens *))
+\section{Honeytoken use}
+\begin{tcolorbox}[colback=bad!6,colframe=bad,title={\bfseries Certain compromise signal},breakable]
+((* for h in d.honeytokens *))
+\textbf{(((h.get('@timestamp', '')[11:19] | tex)))} from \texttt{(((h.get('source.ip', '') | tex)))}:
+a planted (((h.get('hedwig.honeytoken.kind', 'token') | tex))) was used on \texttt{(((h.get('url.path', '') | code)))}.
+The IPs linked to the trapped session were banned.\\
+((* endfor *))
+\end{tcolorbox}
+((* endif *))
+
+((* if d.campaigns *))
+\section{Campaigns named by the Guard}
+\begin{itemize}
+((* for c in d.campaigns *))
+\item (((c | hl)))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((* if d.techniques *))
+\section{MITRE ATT\&CK techniques}
+\small
+\begin{longtable}{@{}p{2.4cm}p{6cm}p{6cm}@{}}
+\headrow \hd{Technique} & \hd{Name} & \hd{Seen as} \\
+\endhead
+\rowcolors{1}{white}{rowgrey}
+((* for code, name, seen in d.techniques *))
+\textbf{(((code | tex)))} & (((name | tex))) & (((seen | hl))) \\
+((* endfor *))
+\end{longtable}
+\normalsize
+((* endif *))
+
+((* if d.timeline *))
+\section{Timeline (UTC)}
+\small
+\begin{longtable}{@{}p{1.8cm}p{2.5cm}p{2cm}p{3.6cm}p{5.4cm}@{}}
+\headrow \hd{Time} & \hd{Source} & \hd{Action} & \hd{Rule} & \hd{Target} \\
+\endhead
+\rowcolors{1}{white}{rowgrey}
+((* for t in d.timeline *))
+(((t.at[11:19] | tex))) & \texttt{(((t.ip | tex)))} & (((t.action | hl))) & (((t.rule | hl))) & (((t.target | code))) \\
+((* endfor *))
+\end{longtable}
+\normalsize
+((* endif *))
+
+\section{Recommended actions}
+\begin{tcolorbox}[colback=note!6,colframe=note,title={\bfseries For the SOC team},breakable]
+\begin{itemize}
+((* for a in d.actions *))
+\item (((a | hl)))
+((* endfor *))
+\end{itemize}
+\end{tcolorbox}
+
+\end{document}

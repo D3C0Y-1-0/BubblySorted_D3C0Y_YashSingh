@@ -111,6 +111,7 @@ class Finding:
     category: str  # payload | phishing | malware
     trap: bool
     status: int = 403
+    detail: dict | None = None  # extra event fields, e.g. the planted file's name and SHA-256
 
 
 def scan_payload(*parts: str) -> Finding | None:
@@ -194,6 +195,17 @@ def _archive(content: bytes) -> Finding | None:
 
 
 def _check_part(filename: str, content: bytes, uploads) -> Finding | None:
+    found = _judge_part(filename, content, uploads)
+    if found:
+        found.detail = {
+            "file.name": filename or None,
+            "file.hash.sha256": hashlib.sha256(content).hexdigest(),
+            "file.size": len(content),
+        }
+    return found
+
+
+def _judge_part(filename: str, content: bytes, uploads) -> Finding | None:
     head = content[:4096]
     if EICAR in content[:1024]:
         return Finding("upload", "eicar", "malware", trap=True)

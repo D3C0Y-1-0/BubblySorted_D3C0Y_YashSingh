@@ -17,6 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from . import hedwig_view
 from .proxy import Guard
 
 STATIC = Path(__file__).parent / "static"
@@ -193,9 +194,56 @@ def create_dashboard(guard: Guard) -> Starlette:
         ok, message = control(guard, data)
         return JSONResponse({"ok": ok, "message": message}, 200 if ok else 400)
 
+    bank = guard.config.bank_root
+    repo = Path(__file__).resolve().parents[3]
+
+    async def api_architecture(request: Request):
+        data = await asyncio.to_thread(hedwig_view.architecture, guard.config.services, bank)
+        return JSONResponse({"services": data, "infra": await asyncio.to_thread(hedwig_view.infra)})
+
+    async def api_hedwig(request: Request):
+        data = await asyncio.to_thread(hedwig_view.hedwig_data, bank)
+        data["soc_reports"] = hedwig_view.soc_reports(bank)
+        return JSONResponse(data)
+
+    async def api_snippet(request: Request):
+        q = request.query_params
+        try:
+            line = int(q.get("line", "1"))
+        except ValueError:
+            line = 1
+        return JSONResponse(
+            hedwig_view.snippet(bank, q.get("service", ""), q.get("file", ""), line)
+        )
+
+    async def api_soc_file(request: Request):
+        path = hedwig_view.soc_file(bank, request.path_params["name"])
+        if path is None:
+            return JSONResponse({"error": "not found"}, 404)
+        return FileResponse(path, media_type="application/pdf")
+
+    async def api_run(request: Request):
+        """Rescan or write the SOC report: starts the hedwig command (token required)."""
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not guard.token or not hmac.compare_digest(supplied.encode(), guard.token.encode()):
+            return JSONResponse({"ok": False, "error": "unauthorized"}, 401)
+        what = request.path_params["what"]
+        args = {"scan": ["scan", "--json"], "soc": ["soc-report", "--since", "30m", "--email"]}.get(
+            what
+        )
+        if args is None:
+            return JSONResponse({"ok": False, "error": "unknown action"}, 400)
+        ok, output = await asyncio.to_thread(hedwig_view.run_hedwig, bank, args, repo)
+        return JSONResponse({"ok": ok, "message": output[-300:]}, 200 if ok else 500)
+
     return Starlette(
         routes=[
             Route("/", index),
+            Route("/api/architecture", api_architecture),
+            Route("/api/hedwig", api_hedwig),
+            Route("/api/snippet", api_snippet),
+            Route("/api/soc/{name}", api_soc_file),
+            Route("/api/run/{what}", api_run, methods=["POST"]),
             Route("/api/snapshot", api_snapshot),
             Route("/api/stream", api_stream),
             Route("/api/control", api_control, methods=["POST"]),
