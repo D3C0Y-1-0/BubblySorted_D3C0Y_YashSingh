@@ -17,7 +17,7 @@
 A honeytoken was used, which proves the attacker acted on what the decoy showed it.
 ((* endif *))
 ((* set planted = d.attackers | map(attribute='files') | map('length') | sum *))
-((* if planted *))\textbf{(((planted)))} planted file((( 's' if planted != 1 else '' ))) were identified (hashes below).((* endif *))
+((* if planted *))\textbf{(((planted)))} planted file((( 's' if planted != 1 else '' ))) were identified (hashes below). ((* endif *))
 No attacker reached a real service: every request was stopped or answered by the decoy.
 ((* else *))
 No attack activity was found in this window.
@@ -27,22 +27,28 @@ No attack activity was found in this window.
 ((* if d.attackers *))
 \section{Attackers}
 \small
-\begin{longtable}{@{}p{2.4cm}p{2.6cm}p{2.6cm}p{3cm}p{1.4cm}p{3.6cm}@{}}
-\headrow \hd{Source IP} & \hd{First seen (UTC)} & \hd{Trapped} & \hd{Banned} & \hd{Stopped} & \hd{Caught by} \\
+\begin{longtable}{@{}p{2.3cm}p{2cm}p{1.9cm}p{3.4cm}p{2.5cm}p{3.5cm}@{}}
+\headrow \hd{Source IP} & \hd{First seen} & \hd{Trapped} & \hd{Banned} & \hd{Stopped} & \hd{Caught by} \\
 \endhead
 \rowcolors{1}{white}{rowgrey}
-((* for a in d.attackers *))
+((* for a in d.shown *))
 \texttt{(((a.ip | tex)))} & (((a.first[11:19] | tex))) &
 ((* if a.trapped_at *))\textcolor{bad}{\textbf{(((a.trapped_at[11:19] | tex)))}}((* else *))--((* endif *)) &
 ((* if a.banned_at *))\textcolor{bad}{\textbf{(((a.banned_at[11:19] | tex))) until (((a.banned_until | tex)))}}((* else *))--((* endif *)) &
-(((a.stopped))) \,+\, (((a.decoy))) decoy &
-\raggedright (((a.rules.most_common(3) | map('first') | join(', ') | hl))) \\
+(((a.stopped))) stopped, (((a.decoy))) decoy &
+\raggedright\arraybackslash (((a.rules.most_common(3) | map('first') | join(', ') | hl))) \\
 ((* endfor *))
 \end{longtable}
 \normalsize
+((* if d.more *))
+\textit{...and (((d.more))) more sources, listed in Elasticsearch and Kibana.}
+((* endif *))
+((* if d.credential *))
+\textbf{Credential attack:} (((d.credential | hl)))
+((* endif *))
 
 \section{Indicators of compromise}
-((* for a in d.attackers *))
+((* for a in d.detailed *))
 \begin{tcolorbox}[colback=white,colframe=low,title={\bfseries \texttt{(((a.ip | tex)))}},breakable,fonttitle=\small]
 \small
 \textbf{Targets:} (((a.targets.most_common(4) | map('first') | join('; ') | code)))\\
@@ -55,7 +61,7 @@ No attack activity was found in this window.
 \textbf{Planted files (SHA-256):}
 \begin{itemize}\setlength\itemsep{0pt}
 ((* for sha, name in a.files.items() *))
-\item \texttt{\footnotesize (((sha[:32])))\allowbreak(((sha[32:])))} \quad (((name | code)))
+\item \texttt{\footnotesize (((sha[:32])))\allowbreak{}(((sha[32:])))} \quad (((name | code)))
 ((* endfor *))
 \end{itemize}
 ((* endif *))

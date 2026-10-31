@@ -129,8 +129,9 @@ def render_comment(found: list[Finding], pr: str = "", base: str = "", head: str
             lines.append(f"\n...and {len(found) - MAX_ROWS} more.")
         lines += [
             "",
-            "If this is merged, Hedwig's watcher takes the affected service down, fixes it (a "
-            "malicious package is removed) and brings it back up.",
+            "If this is merged, Hedwig's watcher takes the affected service down, fixes it"
+            + (" (the malicious package is removed)" if malware else "")
+            + " and brings it back up.",
         ]
     if base and head:
         lines += ["", f"<sub>compared `{base[:7]}` (base) with `{head[:7]}` (head)</sub>"]

@@ -371,6 +371,12 @@ GitHub work uses the built-in `GITHUB_TOKEN` in the workflow and the logged-in `
 
 ---
 
+## Final demo fixes (from `plan/wegobalistic.md`, built)
+- **Reports:** the PM PDF is restyled (colour bands, severity badges, highlighted ids and actions) and `pm_email` is a list of four addresses that the Guard's emails use too. New `hedwig soc-report`: a SOC PDF built from Elasticsearch (or the Guard's files) with a UTC timeline, attackers, indicators (planted file names and SHA-256), ATT&CK techniques and recommended actions.
+- **Web dashboard** on the Guard's `:8090` page: bank architecture with tech stack and live status, infrastructure report (postgres, redis, qdrant, ELK), findings with filters and an expandable code-reachability tree, incidents and Hedwig activity, a per-service report with a critical warning while it is under attack, attack-type dot colours with a legend, an Open Kibana button and SOC report access.
+- **CLI `/dash`:** Enter on an alert opens its call-site tree; the filter is live with quick filters.
+- **Demo flow:** two PRs on a `test` branch (simple notifications bump; transaction SnakeYAML 1.33 to 2.x with a test that fails until fixed), `hedwig watch --branch test`, one `full_attack.py` script (distributed brute force, then malware and ransomware into the honeypot), and `DEMO.md`.
+
 ## Verification (overall)
 - Every phase: `uv run ruff check && uv run pytest` green in CI. Unit tests use offline fixtures and mocked Groq calls.
 - One live-Groq smoke test (`hedwig fix node-lodash`) per change to agent prompts.

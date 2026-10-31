@@ -20,6 +20,8 @@ from hedwig import config
 ELASTIC_URL = "http://127.0.0.1:9200"
 INDEX = "chakravyuha-*"
 MAX_EVENTS = 5000
+MAX_SHOWN = 8
+MAX_DETAILED = 6
 STOPPED = {"blocked", "banned", "trapped", "tarpitted", "login_failed"}
 
 # rule or category -> (ATT&CK technique id, name)
@@ -84,6 +86,10 @@ class SocData:
     techniques: list[tuple[str, str, str]]  # (id, name, evidence)
     severity: str
     actions: list[str]
+    shown: list[Attacker] = field(default_factory=list)  # the most important, for the tables
+    more: int = 0  # how many other sources are not listed
+    detailed: list[Attacker] = field(default_factory=list)  # those that get an indicators block
+    credential: str = ""  # one line about the credential attack, if there was one
 
 
 def parse_since(text: str) -> timedelta:
@@ -163,6 +169,8 @@ def summarise(events: list[dict], since: datetime, source: str) -> SocData:
     honeytokens: list[dict] = []
     campaigns: dict[str, str] = {}
     timeline: list[dict] = []
+    failures: list[dict] = []  # routine login failures are summarised, not listed one by one
+    swept: list[dict] = []  # sources the Scout trapped as one campaign, likewise
     for event in events:
         action = event.get("event.action", "")
         ip = event.get("source.ip", "")
@@ -182,6 +190,12 @@ def summarise(events: list[dict], since: datetime, source: str) -> SocData:
         else:
             who.stopped += 1
             who.rules[rule] += 1
+            if action == "login_failed":
+                failures.append(event)
+                continue
+            if rule == "campaign":
+                swept.append(event)
+                continue
             timeline.append(
                 {"at": _iso(event), "ip": ip, "action": action, "rule": rule,
                  "target": f"{event.get('service') or '-'} {event.get('url.path') or ''}".strip()}
@@ -204,19 +218,48 @@ def summarise(events: list[dict], since: datetime, source: str) -> SocData:
             who.passwords.add(str(event["hedwig.password_fp"]))
         if event.get("file.hash.sha256"):
             who.files[str(event["file.hash.sha256"])] = str(event.get("file.name") or "(no name)")
+    if failures:
+        sources = {e.get("source.ip") for e in failures}
+        timeline.append(
+            {"at": _iso(failures[0]), "ip": f"{len(sources)} sources", "action": "login_failed",
+             "rule": "login failures",
+             "target": f"{len(failures)} failed logins on {failures[0].get('url.path', '')}"}
+        )  # fmt: skip
+    if swept:
+        timeline.append(
+            {"at": _iso(swept[0]), "ip": f"{len({e.get('source.ip') for e in swept})} sources",
+             "action": "trapped", "rule": "campaign",
+             "target": "named as one campaign by the Scout and drawn into the decoy"}
+        )  # fmt: skip
     rules = {r for a in attackers.values() for r in a.rules} | {
         e.get("event.category", "") for e in events
     }
-    techniques = []
+    merged: dict[str, tuple[str, list[str]]] = {}
     for key in sorted(rules):
         if key in ATTACK:
             code, name = ATTACK[key]
-            techniques.append((code, name, key))
+            merged.setdefault(code, (name, []))[1].append(key)
+    techniques = [(code, name, ", ".join(keys)) for code, (name, keys) in sorted(merged.items())]
     people = sorted(attackers.values(), key=lambda a: a.first)
     critical = bool(honeytokens) or any(set(a.rules) & CRITICAL_RULES for a in people)
     severity = "critical" if critical else ("high" if people else "low")
     actions = _actions(people, honeytokens, campaigns)
+    ranked = sorted(people, key=lambda a: (not a.files, not a.banned_at, -a.stopped, a.first))
+    shown = ranked[:MAX_SHOWN]
+    serious = [a for a in ranked if a.files or a.banned_at or set(a.rules) & CRITICAL_RULES]
+    bulk = [a for a in people if a.users and not a.files]
+    credential = ""
+    if len(bulk) > 1:
+        accounts = sorted({u for a in bulk for u in a.users})
+        credential = (
+            f"{len(bulk)} sources made {sum(a.requests for a in bulk)} login attempts against "
+            f"{', '.join(accounts)} (distributed credential attack)."
+        )
     return SocData(
+        shown=shown,
+        more=len(people) - len(shown),
+        detailed=(serious or ranked)[:MAX_DETAILED],
+        credential=credential,
         since=since.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
         until=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
         source=source,

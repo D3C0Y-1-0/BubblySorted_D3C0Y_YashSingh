@@ -166,6 +166,9 @@ def smoke(root: Path, service: str, health_path: str = "/health") -> tuple[bool,
             return False, f"{service} did not become healthy within {SMOKE_WAIT} s"
         time.sleep(1)
     time.sleep(SETTLE_SECONDS)
-    if status(root, [service])[service] != "active":
+    if status(root, [service])[service] not in (
+        "active",
+        "starting",
+    ):  # starting: healthcheck pending
         return False, f"{service} stopped again right after starting"
     return True, f"{service} healthy" + (f" at {url}{health_path}" if url else " (running)")

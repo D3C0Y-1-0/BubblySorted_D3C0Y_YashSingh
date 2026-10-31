@@ -40,8 +40,10 @@ window.trackEvents = (batch) => {
   for (const e of batch) {
     const svc = e.service;
     if (!svc || !ATTACK_ACTIONS.has(e["event.action"]) || e["hedwig.monitor"]) continue;
+    const at = Date.parse(e["@timestamp"]) || now;
+    if (now - at > LIVE_ATTACK_MS) continue; // history (loaded with the page) is not a live attack
     const entry = recent.get(svc) || { at: 0, cats: new Set() };
-    entry.at = now;
+    entry.at = Math.max(entry.at, at);
     entry.last = e;
     if (e["event.category"]) entry.cats.add(e["event.category"]);
     recent.set(svc, entry);

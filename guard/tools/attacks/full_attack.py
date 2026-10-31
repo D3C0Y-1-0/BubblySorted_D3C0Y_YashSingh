@@ -26,10 +26,17 @@ import malware
 REPO = Path(__file__).resolve().parents[3]
 
 
+def hedwig_command() -> list[str]:
+    """The installed `hedwig` if it has soc-report, else the one in this checkout (via uv)."""
+    if shutil.which("hedwig"):
+        probe = subprocess.run(["hedwig", "soc-report", "--help"], capture_output=True)
+        if probe.returncode == 0:
+            return ["hedwig"]
+    return ["uv", "run", "--project", str(REPO), "hedwig"]
+
+
 def soc_report(since: str) -> None:
-    command = (
-        ["hedwig"] if shutil.which("hedwig") else ["uv", "run", "--project", str(REPO), "hedwig"]
-    )
+    command = hedwig_command()
     bank = REPO / "guard" / "bank"
     print("\n== 3. SOC report ==")
     done = subprocess.run(

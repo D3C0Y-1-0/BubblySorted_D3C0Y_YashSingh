@@ -192,9 +192,11 @@ def run_hedwig(bank: Path | None, args: list[str], repo: Path) -> tuple[bool, st
     """Start the hedwig command in the bank folder (the user's own tool, like a terminal)."""
     if bank is None:
         return False, "no bank folder configured"
-    command = (
-        ["hedwig"] if shutil.which("hedwig") else ["uv", "run", "--project", str(repo), "hedwig"]
-    )
+    command = ["uv", "run", "--project", str(repo), "hedwig"]
+    if shutil.which("hedwig"):  # the installed one, when it knows the command
+        probe = subprocess.run(["hedwig", args[0], "--help"], capture_output=True)
+        if probe.returncode == 0:
+            command = ["hedwig"]
     try:
         done = subprocess.run(
             [*command, *args], cwd=bank, capture_output=True, text=True, timeout=300
