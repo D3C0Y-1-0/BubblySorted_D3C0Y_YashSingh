@@ -46,9 +46,13 @@ def clear_state() -> list[str]:
         cleared.append(tokens.name)
     events = DATA / "events"
     if events.is_dir():
+        held = 0
         for jsonl in events.glob("*.jsonl"):
-            jsonl.unlink()
-        cleared.append("events/*.jsonl")
+            try:
+                jsonl.unlink()
+            except PermissionError:  # the running Guard holds today's file open on Windows
+                held += 1
+        cleared.append("events/*.jsonl" + (f" ({held} held by the running Guard)" if held else ""))
     return cleared
 
 
