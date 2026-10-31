@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chakravyuha</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-level="calm">
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="-12 -12 24 24" aria-hidden="true">
+        <circle r="10.5"/><circle r="7"/><circle r="3.5"/>
+      </svg>
+      <div>
+        <h1>Chakravyuha</h1>
+        <p class="sub">Hedwig Guard · live formation</p>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pill level" id="level">calm</span>
+      <span class="pill" id="mode">block</span>
+      <span class="pill" id="uptime">0s</span>
+      <span class="pill conn" id="conn">connecting</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel formation">
+      <svg id="rings" viewBox="-500 -500 1000 1000" role="img"
+           aria-label="Seven rings of the formation with a dot per client"></svg>
+      <div class="legend">
+        <span><i class="sw s0"></i>calm</span>
+        <span><i class="sw s3"></i>tarpit</span>
+        <span><i class="sw s5"></i>hard challenge</span>
+        <span><i class="sw s10"></i>trap</span>
+        <span><i class="sw tablet"></i>allowlisted</span>
+      </div>
+      <div id="tip" class="tip" hidden></div>
+    </section>
+
+    <section class="side">
+      <div class="tiles">
+        <div class="tile"><b id="t-rps">0</b><span>req/s</span></div>
+        <div class="tile"><b id="t-stopped-rps">0</b><span>stopped/s</span></div>
+        <div class="tile"><b id="t-allowed">0</b><span>allowed</span></div>
+        <div class="tile"><b id="t-stopped">0</b><span>stopped</span></div>
+        <div class="tile"><b id="t-tarpit">0</b><span>tarpitted now</span></div>
+        <div class="tile"><b id="t-bans">0</b><span>active bans</span></div>
+        <div class="tile"><b id="t-traps">0</b><span>in the maze</span></div>
+        <div class="tile"><b id="t-passwords">0</b><span>passwords tried</span></div>
+        <div class="tile wide"><b id="t-challenges">0 / 0</b><span>challenges solved / issued</span></div>
+      </div>
+
+      <div class="panel">
+        <h2>Stops per ring</h2>
+        <ol id="ring-bars" class="bars"></ol>
+      </div>
+
+      <div class="panel">
+        <h2>Top suspects</h2>
+        <ol id="suspects" class="suspects"><li class="empty">No suspicion yet</li></ol>
+      </div>
+    </section>
+
+    <section class="panel log">
+      <div class="log-head">
+        <h2>Event log</h2>
+        <div class="filters">
+          <input id="f-ip" type="search" placeholder="Filter IP or path" autocomplete="off">
+          <select id="f-ring" aria-label="Ring">
+            <option value="">All rings</option>
+            <option value="1">1 Gate</option><option value="2">2 Flood</option>
+            <option value="3">3 Challenge</option><option value="4">4 Route</option>
+            <option value="5">5 Login</option><option value="6">6 Inspection</option>
+            <option value="7">7 Maze</option><option value="centre">Centre</option>
+          </select>
+          <select id="f-cat" aria-label="Category">
+            <option value="">All categories</option>
+            <option>ddos</option><option>challenge</option><option>probe</option>
+            <option>bruteforce</option><option>payload</option><option>phishing</option>
+            <option>malware</option><option>trap</option><option>honeytoken</option>
+          </select>
+          <button id="pause" type="button">Pause</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>IP</th><th>Ring</th><th>Action</th><th>Status</th>
+            <th>Method</th><th>Path</th><th>Rule</th><th>Susp.</th>
+          </tr></thead>
+          <tbody id="log"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

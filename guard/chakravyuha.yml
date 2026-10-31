@@ -1,0 +1,25 @@
+# Hedwig Chakravyuha settings. Everything has a safe default; see chakravyuhaPLAN.md.
+mode: block                     # block | monitor
+allowlist: []                   # the demo tablet's hotspot IP: never trapped or banned
+trap_minutes: 30                # max 60
+suspicion:
+  tarpit: 3
+  hard_challenge: 5
+  trap: 10
+challenge:
+  difficulty: 18                # proof-of-work bits; +4 at hard_challenge, +2/+4 at alert/siege
+  session_minutes: 30           # a third of this for clients at hard_challenge
+services:
+  transaction:
+    upstream: http://127.0.0.1:9001
+    rate: 20
+    login_paths: [/login]
+    routes:
+      - GET /
+      - GET /health
+      - POST /login
+      - GET /balance
+      - POST /transfer
+    challenge: true
+    redirect_hosts: []
+    uploads: false

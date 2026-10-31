@@ -1,0 +1,401 @@
+"""The Guard: a reverse proxy that runs every request through the rings, then forwards it to
+the bank service its path prefix routes to. Responses are streamed back.
+"""
+
+import asyncio
+import contextlib
+import hmac
+import os
+import secrets
+import time
+from collections.abc import Callable
+from pathlib import Path
+
+import httpx
+from starlette.applications import Starlette
+from starlette.background import BackgroundTask
+from starlette.requests import ClientDisconnect, Request
+from starlette.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.routing import Route
+
+from . import challenge, rings
+from . import state as signals
+from .challenge import Challenger
+from .config import Config, Service
+from .events import EventBus, make_event
+from .state import State
+from .stats import Stats
+
+HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
+    "trailers", "transfer-encoding", "upgrade",
+}  # fmt: skip
+REQUEST_DROP = HOP_BY_HOP | {"host", "content-length", "x-hedwig-test-ip"}
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+INTERNAL = "/__hedwig"
+CHALLENGE_PATH = f"{INTERNAL}/challenge"
+TEST_IP_HEADER = "x-hedwig-test-ip"
+
+
+class BodyTooLarge(Exception):
+    pass
+
+
+def load_secret(data_dir: Path | None) -> bytes:
+    """CHAKRA_SECRET, else a key kept in the data dir so fingerprints survive restarts."""
+    if env := os.environ.get("CHAKRA_SECRET"):
+        return env.encode()
+    if data_dir is None:
+        return secrets.token_bytes(32)
+    path = data_dir / "secret.key"
+    try:
+        if path.is_file():
+            return bytes.fromhex(path.read_text().strip())
+        key = secrets.token_bytes(32)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(key.hex())
+        return key
+    except (OSError, ValueError):
+        return secrets.token_bytes(32)
+
+
+class Guard:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        token: str | None = None,
+        demo: bool = False,
+        transport: httpx.AsyncBaseTransport | None = None,
+        bus: EventBus | None = None,
+        state: State | None = None,
+        sleep: Callable = asyncio.sleep,
+        wallclock: Callable[[], float] = time.time,
+    ) -> None:
+        self.config = config
+        self.token = token
+        self.demo = demo
+        self.state = state or State(config)
+        self.bus = bus or EventBus(config.data_dir, stdout=config.stdout_events)
+        self.secret = load_secret(config.data_dir)
+        self.challenger = Challenger(self.secret, clock=wallclock)
+        self.stats = Stats()
+        self.bus.listeners.append(self.stats.record)
+        self.sleep = sleep
+        self.upstream = httpx.AsyncClient(
+            transport=transport, timeout=httpx.Timeout(30.0, connect=5.0), follow_redirects=False
+        )
+        # longest prefix first, so /transaction/x never falls to "/"
+        self.routes = sorted(
+            config.services.items(), key=lambda item: len(item[1].prefix or ""), reverse=True
+        )
+
+    # -- helpers ---------------------------------------------------------------------------
+    def client_ip(self, request: Request) -> str:
+        if self.demo and (test_ip := request.headers.get(TEST_IP_HEADER)):
+            return test_ip.strip()[:64]
+        return request.client.host if request.client else "unknown"
+
+    def route(self, path: str) -> tuple[str | None, Service | None, str]:
+        for name, service in self.routes:
+            prefix = service.prefix or "/"
+            if prefix == "/":
+                return name, service, path
+            if path == prefix or path.startswith(prefix + "/"):
+                return name, service, path[len(prefix) :] or "/"
+        return None, None, path
+
+    def emit(self, action: str, ctx: rings.Ctx, status: int | None, ring, **fields) -> None:
+        if ctx.username is not None:
+            fields.setdefault("user.name", ctx.username)
+        if ctx.password_fp is not None:
+            fields.setdefault("hedwig.password_fp", ctx.password_fp)
+        self.bus.emit(
+            make_event(
+                action,
+                ip=ctx.ip,
+                ring=ring,
+                method=ctx.method,
+                path=ctx.path,
+                status=status,
+                service=ctx.service_name,
+                suspicion=self.state.suspicion(ctx.client),
+                **fields,
+            )
+        )
+
+    def guard_error(self, ctx: rings.Ctx, ring, error: Exception) -> None:
+        try:
+            self.emit("guard-error", ctx, None, ring, rule=f"{type(error).__name__}: {error}"[:200])
+        except Exception:  # the error event itself must not break the request
+            pass
+
+    def monitoring(self, ctx: rings.Ctx) -> bool:
+        return self.config.service_mode(ctx.service) == "monitor"
+
+    def stop_response(self, ctx: rings.Ctx, stop: rings.Stop) -> Response | None:
+        """Apply a ring's decision. In monitor mode, record it and let the request through."""
+        if self.monitoring(ctx):
+            self.emit(
+                stop.action, ctx, stop.status, stop.ring, category=stop.category,
+                rule=stop.rule, **{"hedwig.monitor": True},
+            )  # fmt: skip
+            return None
+        action = stop.action
+        if stop.ban_minutes and not self.state.ban(ctx.ip, stop.ban_minutes):
+            action = "blocked"  # allowlisted: never banned
+        if stop.trap and not self.state.trap(ctx.ip):
+            action = "blocked"
+        self.emit(action, ctx, stop.status, stop.ring, category=stop.category, rule=stop.rule)
+        response = Response(
+            stop.body or "Forbidden", stop.status, headers=stop.headers, media_type=stop.media_type
+        )
+        return self.with_security(response)
+
+    def run_ring(self, number: int, ring: Callable, ctx: rings.Ctx) -> Response | None:
+        try:
+            stop = ring(ctx, self.state, self.config)
+        except Exception as error:  # fail open
+            self.guard_error(ctx, number, error)
+            return None
+        return self.stop_response(ctx, stop) if stop else None
+
+    @staticmethod
+    def with_security(response: Response) -> Response:
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        return response
+
+    async def read_body(self, request: Request) -> bytes:
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > self.config.max_body_bytes:
+            raise BodyTooLarge
+        chunks, size = [], 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > self.config.max_body_bytes:
+                raise BodyTooLarge
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    # -- endpoints -------------------------------------------------------------------------
+    async def health(self, request: Request) -> Response:
+        return self.with_security(JSONResponse({"status": "ok"}))
+
+    async def events(self, request: Request) -> Response:
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not self.token or not hmac.compare_digest(supplied.encode(), self.token.encode()):
+            return self.with_security(JSONResponse({"error": "unauthorized"}, 401))
+        limit = request.query_params.get("limit", "")
+        events = self.bus.recent(int(limit) if limit.isdigit() else 1000)
+        return self.with_security(JSONResponse(events))
+
+    async def handle(self, request: Request) -> Response:
+        state, config = self.state, self.config
+        ip = self.client_ip(request)
+        if request.url.path.startswith(INTERNAL + "/"):
+            name, service, inner = None, None, request.url.path  # the Guard's own endpoints
+        else:
+            name, service, inner = self.route(request.url.path)
+        ctx = rings.Ctx(
+            ip=ip,
+            method=request.method,
+            path=request.url.path,
+            query=request.url.query,
+            headers=request.headers,
+            service_name=name,
+            service=service,
+            inner_path=inner,
+            client=state.client(ip),
+        )
+        if state.in_flight >= config.flood.max_in_flight:
+            stop = rings.Stop(2, 429, "blocked", "in-flight-cap", "ddos", body="Too Many Requests")
+            return self.with_security(PlainTextResponse(stop.body, stop.status))
+        state.in_flight += 1
+        try:
+            return await self._handle(request, ctx)
+        finally:
+            state.in_flight -= 1
+
+    async def _handle(self, request: Request, ctx: rings.Ctx) -> Response:
+        state, config = self.state, self.config
+        for number, ring in ((1, rings.gate), (2, rings.flood)):
+            if response := self.run_ring(number, ring, ctx):
+                return response
+        if ctx.path == CHALLENGE_PATH and ctx.method == "POST":
+            return await self.solve_challenge(request, ctx)
+        if response := self.run_ring(3, self.challenger.ring, ctx):
+            return response
+
+        try:
+            ctx.body = await asyncio.wait_for(self.read_body(request), config.flood.body_timeout_s)
+        except BodyTooLarge:
+            stop = rings.Stop(2, 413, "blocked", "body-size", category="ddos", body="Too Large")
+            if response := self.stop_response(ctx, stop):
+                return response
+        except TimeoutError:
+            stop = rings.Stop(2, 408, "blocked", "slow-request", category="ddos", body="Timeout")
+            if response := self.stop_response(ctx, stop):
+                return response
+        except ClientDisconnect:
+            return Response(status_code=499)
+
+        if ctx.service is None:
+            # Ring 4 (phase C5) scores unknown routes; until then they are simply not found.
+            self.emit("blocked", ctx, 404, 4, rule="no-service")
+            return self.with_security(PlainTextResponse("Not Found", 404))
+
+        try:
+            rings.login_credentials(ctx, self.secret)
+        except Exception as error:
+            self.guard_error(ctx, 5, error)
+
+        if state.suspicion(ctx.client) >= config.suspicion.trap and not state.allowlisted(ctx.ip):
+            stop = rings.Stop(7, 403, "trapped", "suspicion", category="trap", trap=True)
+            if response := self.stop_response(ctx, stop):
+                return response
+
+        return await self.forward(ctx)
+
+    async def forward(self, ctx: rings.Ctx) -> Response:
+        service = ctx.service
+        assert service is not None
+        url = service.upstream.rstrip("/") + ctx.inner_path
+        if ctx.query:
+            url += "?" + ctx.query
+        headers = []
+        for key, value in ctx.headers.items():
+            if key.lower() == "cookie":
+                value = challenge.strip_session_cookie(value)
+            if value and key.lower() not in REQUEST_DROP:
+                headers.append((key, value))
+        headers += [("x-forwarded-for", ctx.ip), ("x-real-ip", ctx.ip)]
+        upstream_request = self.upstream.build_request(
+            ctx.method, url, headers=headers, content=ctx.body
+        )
+        try:
+            upstream = await self.upstream.send(upstream_request, stream=True)
+        except httpx.HTTPError as error:
+            self.emit("allowed", ctx, 502, "centre", rule=f"upstream: {type(error).__name__}")
+            return self.with_security(PlainTextResponse("Bad Gateway", 502))
+
+        status = upstream.status_code
+        action, ring, extra = "allowed", "centre", {}
+        delay = 0.0
+        try:
+            result = rings.login_result(ctx, status, self.state, self.config)
+        except Exception as error:
+            self.guard_error(ctx, 5, error)
+            result = None
+        if result and result.failed:
+            action, ring = "login_failed", 5
+            extra = {"category": "bruteforce", "rule": f"login-failure-{result.failures}"}
+            if self.monitoring(ctx):
+                extra["hedwig.monitor"] = True
+            else:
+                delay = result.delay
+
+        if ctx.tarpit and not self.monitoring(ctx):
+            if self.state.tarpitted >= self.config.flood.tarpit_cap:
+                await upstream.aclose()
+                self.emit("blocked", ctx, 429, 2, category="ddos", rule="tarpit-cap")
+                return self.with_security(PlainTextResponse("Too Many Requests", 429))
+            delay = max(delay, rings.tarpit_delay(self.state.suspicion(ctx.client), self.config))
+            if action == "allowed":
+                action, ring = "tarpitted", 2
+
+        if delay:
+            self.state.tarpitted += ctx.tarpit
+            try:
+                await self.sleep(delay)
+            finally:
+                self.state.tarpitted -= ctx.tarpit
+
+        self.emit(action, ctx, status, ring, **extra)
+        if result and result.trip:
+            self.stop_response_after(ctx, result.trip)
+
+        # raw bytes pass through still encoded, so the upstream content-length stays valid
+        response = StreamingResponse(
+            upstream.aiter_raw(), status_code=status, background=BackgroundTask(upstream.aclose)
+        )
+        response.raw_headers = [
+            (k.lower().encode("latin-1"), v.encode("latin-1"))
+            for k, v in upstream.headers.multi_items()
+            if k.lower() not in HOP_BY_HOP
+        ]
+        return self.with_security(response)
+
+    def stop_response_after(self, ctx: rings.Ctx, stop: rings.Stop) -> None:
+        """A decision made after the answer went out (a brute-force trip): record and apply it."""
+        if self.monitoring(ctx):
+            self.emit(
+                stop.action, ctx, stop.status, stop.ring, category=stop.category,
+                rule=stop.rule, **{"hedwig.monitor": True},
+            )  # fmt: skip
+            return
+        if stop.trap and self.state.trap(ctx.ip):
+            self.emit(
+                "trapped", ctx, stop.status, stop.ring, category=stop.category, rule=stop.rule
+            )
+
+    async def solve_challenge(self, request: Request, ctx: rings.Ctx) -> Response:
+        """Ring 3's answer desk: a correct proof of work earns a session cookie bound to the IP."""
+        state, config = self.state, self.config
+        try:
+            body = await asyncio.wait_for(request.body(), config.flood.body_timeout_s)
+            token, nonce = challenge.parse_solution(
+                body[:4096], request.headers.get("content-type", "")
+            )
+            verdict = self.challenger.check_solution(
+                ctx.ip, token, nonce, config.challenge.token_seconds
+            )
+        except (ValueError, TimeoutError, ClientDisconnect):
+            verdict = challenge.Verdict(False, "malformed")
+        if not verdict.ok:
+            state.add(ctx.client, signals.CHALLENGE_FAILED)
+            self.emit(
+                "blocked", ctx, 403, 3, category="challenge", rule=f"challenge-{verdict.reason}"
+            )
+            return self.with_security(JSONResponse({"ok": False, "error": verdict.reason}, 403))
+
+        seconds = self.challenger.session_seconds(state.suspicion(ctx.client), config)
+        ctx.client.challenges_pending = 0
+        self.emit("challenge_solved", ctx, 200, 3, category="challenge", rule="proof-of-work")
+        response = JSONResponse({"ok": True, "session_seconds": seconds})
+        response.set_cookie(
+            challenge.COOKIE, self.challenger.make_session(ctx.ip, seconds), max_age=seconds,
+            path="/", httponly=True, samesite="lax",
+        )  # fmt: skip
+        response.headers["Cache-Control"] = "no-store"
+        return self.with_security(response)
+
+    async def aclose(self) -> None:
+        await self.upstream.aclose()
+        self.bus.close()
+
+
+def create_app(config: Config, **kwargs) -> Starlette:
+    guard = Guard(config, **kwargs)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette):
+        yield
+        await guard.aclose()
+
+    methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    app = Starlette(
+        routes=[
+            Route(f"{INTERNAL}/health", guard.health, methods=["GET"]),
+            Route(f"{INTERNAL}/events", guard.events, methods=["GET"]),
+            Route("/{path:path}", guard.handle, methods=methods),
+        ],
+        lifespan=lifespan,
+    )
+    app.state.guard = guard
+    return app
