@@ -11,7 +11,7 @@ public final class FeeReport {
     public static String dump(FeeConfig config) {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        Yaml yaml = new Yaml(new Representer(), options);
+        Yaml yaml = new Yaml(new Representer(options), options);
         return yaml.dumpAs(config, org.yaml.snakeyaml.nodes.Tag.MAP, DumperOptions.FlowStyle.BLOCK);
     }
 }
