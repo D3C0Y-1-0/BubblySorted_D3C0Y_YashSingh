@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 from hedwig import config, settings
+from hedwig.core import report, tools
 
 console = Console()
 
@@ -66,9 +67,19 @@ def doctor() -> None:
     table.add_column("status")
     table.add_column("enables")
     for tool, purpose in TOOLS.items():
-        found = shutil.which(tool)
-        status = f"[green]{found}[/green]" if found else "[yellow]missing[/yellow]"
+        found = tools.find_tectonic() if tool == "tectonic" else shutil.which(tool)
+        missing = "[yellow]missing[/yellow]"
+        if tool == "tectonic":
+            missing = "[yellow]downloaded on first report[/yellow]"
+        status = f"[green]{found}[/green]" if found else missing
         table.add_row(tool, status, purpose)
+    values = settings.load()
+    if values["smtp_user"] and values["smtp_pass"]:
+        host, port = report.smtp_server()
+        mail = f"[green]{values['smtp_user']} via {host}:{port} to {values['pm_email']}[/green]"
+    else:
+        mail = "[yellow]smtp_user / smtp_pass not set[/yellow]"
+    table.add_row("email", mail, "PM report mails")
     console.print(table)
     if not settings.get("groq_api_key"):
         console.print("[yellow]groq_api_key is not set.[/yellow] Run: hedwig config")

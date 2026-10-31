@@ -17,4 +17,3 @@ Each folder under `projects/` is one service, the same shape `hedwig init` expec
 - `kev.json`: CISA KEV catalog trimmed to a few CVEs
 - `epss.json`: EPSS scores for the CVEs above
 
-The replay advisories (`log4shell`, `jsonwebtoken`) ship inside the package: `src/hedwig/data/replay/`.

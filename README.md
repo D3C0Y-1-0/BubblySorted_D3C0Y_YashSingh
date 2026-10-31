@@ -49,14 +49,26 @@ This opens the Hedwig app. Type `/` to see the commands:
 | `/scan [path\|git-url]` | Find known vulnerabilities, ranked by risk. Add `--offline`, `--json`. Defaults to this folder |
 | `/status` | Findings per service in this folder |
 | `/explain <id>` | Reasoning, score factors and the recommended fix for one finding |
-| `/replay <advisory>` | Inject a known advisory (`log4shell`, `jsonwebtoken`) and show what Hedwig would do. Add `--dry-run`, `--json` |
 | `/simulate-attack <service>` | Write an attack request to the service's log. Add `--compromise` for a sign of compromise |
+| `/fix <service>` | Fix the service's vulnerable packages: bump, adapt the code, verify, then do what `.hedwig.yml` allows. Add `--package NAME`, `--dry-run` |
+| `/report <service\|run-id>` | PDF report for the project manager. Add `--email` |
+| `/dash` | Terminal dashboard: the service architecture with live Docker status, alerts with expandable call sites, a reports table and the Guard's attack reports. Keys: `f` fix, `t` take down, `u` start, `a` approve, `e`/`c` expand/collapse, `1` `2` `3` tabs, `/` filter, `?` help |
 | `/config` | Store your Groq API key (saved to `~/.hedwig/config.toml`). Also `/config show` and `/config set <key> <value>` |
 | `/doctor` | Check git, docker, npm, cargo, composer, mvn, tectonic |
 | `/clear`, `/help`, `/exit` | Clear the screen, list commands, leave |
 
-Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig replay <advisory>`, `hedwig simulate-attack <service>`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
+Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig simulate-attack <service>`, `hedwig fix <service>`, `hedwig report <target>`, `hedwig dash`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
 `init` always works on the folder you run it from.
+
+### Fixing and reporting
+
+`fix` needs a Groq key (`/config`), `git`, and for the old-vs-new comparison `docker`. It works in
+git worktrees under `.hedwig/work/`, never in your working copy, and writes everything to
+`.hedwig/runs/<run-id>/` (`diff.patch`, `cases.json`, `verdict.json`, `review.json`, `pr.md`).
+Every agent call and decision goes to `.hedwig/audit.jsonl`. `report` builds the PDF with `tectonic`, which Hedwig downloads once into `~/.hedwig/bin` on first
+use (the first report needs internet). `--email` sends it to `pm_email` and needs `smtp_user` and
+`smtp_pass`: for Gmail that is a 16-character app password (myaccount.google.com/apppasswords).
+`/fix` emails the PM report once when it finishes; add `--no-email` to skip it.
 
 Run the install command again to update. The repo must be public for these links to work.
 

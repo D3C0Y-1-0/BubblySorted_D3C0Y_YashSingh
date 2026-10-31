@@ -14,7 +14,7 @@ Conditions the demo bank (Phase 8) must meet. Copied from `plan/claudesPLAN.md`.
 2. The vulnerable package is imported **and called** in source. User input never reaches the vulnerable path (for example, log4j logs only constants and runs with `-Dlog4j2.formatMsgNoLookups=true`). The data is fake.
 3. `GET /health` returns `200 {"status":"ok"}`.
 4. The `test_cmd` that `init` guesses passes offline in under 60s on the seeded version.
-5. A `Dockerfile` and `hedwig.requests.json` with ≥3 requests. Old-vs-old replay shows zero diffs.
+5. A `Dockerfile` and `hedwig.requests.json` with ≥3 requests. Replaying the recorded requests on two builds of the same code shows zero diffs.
 6. Access logs are written to `<svc>/logs/access.log`.
 
 **Estate:**
@@ -33,10 +33,10 @@ Conditions the demo bank (Phase 8) must meet. Copied from `plan/claudesPLAN.md`.
 | Check | Expected |
 |---|---|
 | `hedwig scan bank/ --json` | All seeded CVEs found, each with reasoning |
-| `replay log4shell` → respond | Transaction fix verified, auto-merged, deployed, smoke OK, no downtime |
+| PR adding a vulnerable dependency, merged over the bot's red check | PM emailed the PDF, fix PR opened, verified fix merged into local main, that service rebuilt and active |
 | account finding | Bot PR, `hedwig:needs-review`, not merged |
 | PR adding vulnerable phpmailer to support | Red check. Admin merge → PDF emailed to PM → fix PR |
-| `simulate-attack notifications --compromise` + `replay jsonwebtoken` | Evidence 4 → notifications suspended, only the offers tile greys out |
+| `simulate-attack notifications --compromise` | Evidence 4 → notifications suspended, only the offers tile greys out |
 | `hedwig dash` | transaction patched, notifications asleep, account/support awaiting human |
 
 

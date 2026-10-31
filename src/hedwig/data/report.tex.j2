@@ -1,0 +1,94 @@
+\documentclass[10pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{booktabs,longtable,array,xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\definecolor{gold}{HTML}{B9800F}
+\begin{document}
+
+{\LARGE\bfseries\color{gold} Hedwig security report}\\[2pt]
+{\large (((name | tex)))}\\[2pt]
+{\small Generated (((generated | tex))) \quad Scanned folder: (((root | tex)))}
+
+\section*{Summary}
+(((summary | tex)))
+
+\begin{tabular}{@{}ll@{}}
+Findings & (((findings | length))) \\
+Critical / high & (((counts.critical))) / (((counts.high))) \\
+Medium / low & (((counts.medium))) / (((counts.low))) \\
+Exploited in the wild (KEV) & (((kev_count))) \\
+Fix runs & (((runs | length))) \\
+\end{tabular}
+
+((* if findings *))
+\section*{Findings, ranked by risk}
+\small
+\begin{longtable}{@{}p{1.9cm}p{1.3cm}p{1.1cm}p{2.6cm}p{3.4cm}p{1.3cm}p{1.6cm}@{}}
+\toprule
+Severity & Risk & Evid. & Service & Package & KEV & Action \\
+\midrule
+\endhead
+((* for f in findings *))
+(((f.severity | tex))) & (((f.risk_text))) & (((f.evidence_level))) & (((f.service | tex))) &
+(((f.package | tex)))@(((f.version | tex))) & (((f.kev_text))) & (((f.decision.action | tex))) \\
+((* endfor *))
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section*{Why each finding ranks where it does}
+\begin{itemize}
+((* for f in top *))
+\item \textbf{(((f.id | tex)))} (((f.package | tex)))@(((f.version | tex))) in (((f.service | tex))): (((f.reasoning | tex)))
+((* endfor *))
+\end{itemize}
+
+\section*{Evidence and reachability}
+\begin{itemize}
+((* for f in top *))
+\item \textbf{(((f.id | tex)))}: (((f.evidence_text | tex))). Reachability: (((f.reachability | tex)))((* if f.call_sites *)) (called in (((f.call_sites[0].function | tex)))() at (((f.call_sites[0].file | tex))):(((f.call_sites[0].line))))((* endif *)).
+((* if f.attacks *)) Attacks seen in logs: (((f.attacks | join(", ") | tex))).((* endif *))
+((* if f.compromise *)) \textbf{Signs of compromise were found in the service logs.}((* endif *))
+((* endfor *))
+\end{itemize}
+((* else *))
+\section*{Findings}
+No known vulnerabilities were found.
+((* endif *))
+
+\section*{Action taken}
+((* if runs *))
+\begin{itemize}
+((* for r in runs *))
+\item \textbf{(((r.service | tex))) / (((r.package | tex)))} (((r.from_version | tex))) to (((r.to_version_text | tex))):
+state \emph{(((r.state | tex)))}, outcome \emph{(((r.action_text | tex)))}.
+((* if r.branch *)) Branch \texttt{(((r.branch | tex)))}.((* endif *))
+((* if r.violations *)) Failed at (((r.failed_step | tex))): (((r.violations | join("; ") | tex))).((* endif *))
+((* if r.summary *)) (((r.summary | tex)))((* endif *))
+((* endfor *))
+\end{itemize}
+
+\section*{Time to action}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Service / package & Started & Time to action \\
+\midrule
+((* for r in runs *))
+(((r.service | tex))) / (((r.package | tex))) & (((r.started_at | tex))) & (((r.duration | tex))) \\
+((* endfor *))
+\bottomrule
+\end{tabular}
+((* else *))
+No fix has been run for this report yet.
+((* endif *))
+
+\section*{Next steps}
+\begin{itemize}
+((* for step in next_steps *))
+\item (((step | tex)))
+((* endfor *))
+\end{itemize}
+
+\end{document}

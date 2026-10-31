@@ -4,15 +4,13 @@ import pytest
 import yaml
 
 from hedwig.core import engine, evidence, inventory
-from hedwig.core.advisories import REPLAY_DIR, AdvisorySource
+from hedwig.core.advisories import AdvisorySource
 from hedwig.core.code_index import CodeIndex
 from hedwig.core.policy import decide
 
 
-def _scan(root, advisories, **source):
-    return engine.scan(
-        root, AdvisorySource(offline=True, directory=advisories, **source), save=False
-    )
+def _scan(root, advisories):
+    return engine.scan(root, AdvisorySource(offline=True, directory=advisories), save=False)
 
 
 def _service(tmp_path, fixtures, name="maven-log4j", allow=None):
@@ -103,14 +101,14 @@ def test_empty_allow_means_observe_only(tmp_path, fixtures):
     assert {f.decision.action for f in result.findings} == {"notify"}
 
 
-def test_replay_then_simulated_compromise_takes_the_service_down(tmp_path, fixtures):
+def test_simulated_compromise_takes_the_service_down(tmp_path, fixtures):
     root = _service(tmp_path, fixtures, allow=["open_fix_pr", "takedown"])
-    replay = _scan(root, REPLAY_DIR, only={"log4shell"})
-    assert [f.id for f in replay.findings] == ["CVE-2021-44228"]
-    assert replay.findings[0].decision.action == "fix"
+    before = _scan(root, fixtures / "advisories")
+    log4shell = next(f for f in before.findings if f.id == "CVE-2021-44228")
+    assert log4shell.decision.action == "fix"
 
     service = engine.resolve_services(root, "medium")[0]
     evidence.write_attack(service.log_path, evidence.pick_rule(["log4j-core"]), compromise=True)
-    after = _scan(root, REPLAY_DIR, only={"log4shell"})
-    assert after.findings[0].evidence_level == 4
-    assert after.findings[0].decision.action == "takedown"
+    after = _scan(root, fixtures / "advisories")
+    assert {f.evidence_level for f in after.findings} == {4}
+    assert {f.decision.action for f in after.findings} == {"takedown"}

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hedwig Shield — Warning</title>
+  <link rel="stylesheet" href="warning.css">
+</head>
+<body>
+  <div id="page">
+
+    <!-- Hedwig header bar -->
+    <header id="warning-header">
+      <span id="brand-owl">🦉</span>
+      <span id="brand-label">HEDWIG SHIELD</span>
+    </header>
+
+    <!-- Central warning card -->
+    <main id="warning-card">
+
+      <!-- Threat icon + level badge -->
+      <div id="threat-visual">
+        <div id="threat-icon">⚠</div>
+        <div id="threat-badge" class="critical">CRITICAL THREAT</div>
+      </div>
+
+      <!-- Heading -->
+      <h1 id="warning-title">This website may be dangerous</h1>
+      <p id="warning-subtitle">Hedwig Shield has detected signals of a phishing or malicious website. Proceed only if you are certain this website is safe.</p>
+
+      <!-- Blocked URL display -->
+      <div id="url-display">
+        <span id="url-label">Flagged URL</span>
+        <span id="url-value"></span>
+      </div>
+
+      <!-- Risk score display -->
+      <div id="score-display">
+        <div id="score-bar-wrap">
+          <div id="score-bar-fill"></div>
+        </div>
+        <div id="score-info">
+          <span id="score-val">--</span>
+          <span id="score-desc">/ 100 Risk Score</span>
+        </div>
+      </div>
+
+      <!-- Detected signals list -->
+      <div id="signals-wrap" class="hidden">
+        <h3 id="signals-title">Why was this flagged?</h3>
+        <ul id="warning-signals"></ul>
+      </div>
+
+      <!-- Action buttons -->
+      <div id="actions">
+        <button id="go-back-btn">&#8592; Go Back to Safety</button>
+        <button id="proceed-btn">I understand the risk, proceed anyway</button>
+      </div>
+
+      <!-- Disclaimer -->
+      <p id="disclaimer">
+        Hedwig Shield uses heuristic analysis. False positives are possible.
+        If you are confident this site is safe, use "proceed anyway" at your own risk.
+      </p>
+
+    </main>
+
+  </div>
+  <script src="warning.js"></script>
+</body>
+</html>

@@ -21,7 +21,7 @@ class Key:
 
 KEYS: dict[str, Key] = {
     "groq_api_key": Key("GROQ_API_KEY", True, "", "Groq API key (all LLM agents)"),
-    "model": Key("HEDWIG_MODEL", False, "qwen/qwen3-32b", "Groq model used by every agent"),
+    "model": Key("HEDWIG_MODEL", False, "qwen/qwen3.8-27b", "Groq model used by every agent"),
     "smtp_user": Key("SMTP_USER", False, "", "SMTP username for PM reports"),
     "smtp_pass": Key("SMTP_PASS", True, "", "SMTP password / app password"),
     "pm_email": Key("PM_EMAIL", False, "yash1812ys@gmail.com", "Project manager email"),

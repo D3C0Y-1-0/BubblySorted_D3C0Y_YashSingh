@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from hedwig import __version__, config, settings
-from hedwig.cli import commands, scan_cmd
+from hedwig.cli import commands, fix_cmd, scan_cmd
 from hedwig.ui.mascot import banner
 
 console = Console()
@@ -166,12 +166,20 @@ def _explain(session: Session, args: list[str]) -> None:
     scan_cmd.run_in_app("explain", args, session.root)
 
 
-def _replay(session: Session, args: list[str]) -> None:
-    scan_cmd.run_in_app("replay", args, session.root)
-
-
 def _simulate_attack(session: Session, args: list[str]) -> None:
     scan_cmd.run_in_app("simulate-attack", args, session.root)
+
+
+def _fix(session: Session, args: list[str]) -> None:
+    fix_cmd.run_in_app("fix", args, session.root)
+
+
+def _report(session: Session, args: list[str]) -> None:
+    fix_cmd.run_in_app("report", args, session.root)
+
+
+def _dash(session: Session, args: list[str]) -> None:
+    fix_cmd.run_in_app("dash", args, session.root)
 
 
 def _doctor(session: Session, args: list[str]) -> None:
@@ -195,8 +203,10 @@ COMMANDS: dict[str, tuple[str, Handler]] = {
     "/scan": ("Find vulnerabilities (this folder, a path or a git URL)", _scan),
     "/status": ("Findings per service in this folder", _status),
     "/explain": ("Explain one finding: /explain <CVE or advisory id>", _explain),
-    "/replay": ("Inject a known advisory: /replay log4shell", _replay),
     "/simulate-attack": ("Write an attack to a service log", _simulate_attack),
+    "/fix": ("Fix a service's vulnerable packages: /fix <service>", _fix),
+    "/report": ("PDF report for the PM: /report <service|run-id> [--email]", _report),
+    "/dash": ("Open the terminal dashboard", _dash),
     "/config": ("Set API keys (also: show, set <key> <value>)", _config),
     "/doctor": ("Check installed tools", _doctor),
     "/clear": ("Clear the screen", _clear),
