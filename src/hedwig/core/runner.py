@@ -6,6 +6,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import uuid
 from contextlib import contextmanager
@@ -101,7 +102,9 @@ def diff_stat(worktree: Path, relative: str) -> str:
     return git(worktree, "diff", "--stat", "--", relative).stdout.strip()
 
 
-def _sh(command: str, folder: Path, timeout: int) -> subprocess.CompletedProcess:
+def _sh(
+    command: str, folder: Path, timeout: int, env: dict | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         shlex.split(command, posix=os.name != "nt"),
         cwd=folder,
@@ -109,7 +112,45 @@ def _sh(command: str, folder: Path, timeout: int) -> subprocess.CompletedProcess
         text=True,
         timeout=timeout,
         shell=os.name == "nt",
+        env=env,
     )
+
+
+PYTEST_NO_TESTS = 5  # pytest's exit code when it collected nothing
+REQUIREMENT_FILES = ("requirements.txt", "requirements-dev.txt", "requirements-test.txt")
+
+
+def _python_env(folder: Path, venv: Path) -> tuple[dict | None, str]:
+    """Create a venv outside the service folder and install its requirements into it.
+
+    Returns the environment to run tests in, or (None, error).
+    """
+    python = shutil.which("python3") or shutil.which("python")
+    if not python:
+        return None, "python is not installed"
+    made = subprocess.run([python, "-m", "venv", str(venv)], capture_output=True, text=True)
+    if made.returncode != 0:
+        return None, f"could not create a virtualenv: {made.stderr.strip()[-300:]}"
+    bin_dir = venv / ("Scripts" if os.name == "nt" else "bin")
+    pip = [str(bin_dir / "python"), "-m", "pip", "install", "-q", "--disable-pip-version-check"]
+    files = [name for name in REQUIREMENT_FILES if (folder / name).is_file()]
+    for name in files:
+        done = subprocess.run(
+            [*pip, "-r", name], cwd=folder, capture_output=True, text=True, timeout=BUILD_TIMEOUT
+        )
+        if done.returncode != 0:
+            return None, f"pip install -r {name} failed: {done.stderr.strip()[-400:]}"
+    probe = subprocess.run(
+        [str(bin_dir / "python"), "-c", "import pytest"], capture_output=True, text=True
+    )
+    if probe.returncode != 0:
+        subprocess.run([*pip, "pytest"], capture_output=True, text=True, timeout=BUILD_TIMEOUT)
+    env = {
+        **os.environ,
+        "VIRTUAL_ENV": str(venv),
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+    }
+    return env, ""
 
 
 def _npm_scripts(folder: Path) -> dict:
@@ -136,6 +177,12 @@ def run_tests(folder: Path, finding: Finding, test_cmd: str) -> Check:
             name, test_cmd = "build", "npm run build"
     if not test_cmd:
         return Check(name, False, "no test_cmd for this service")
+    if finding.ecosystem == "PyPI":
+        with tempfile.TemporaryDirectory(prefix="hedwig-venv-", ignore_cleanup_errors=True) as tmp:
+            env, error = _python_env(folder, Path(tmp) / "venv")
+            if env is None:
+                return Check(name, False, error)
+            return _run_command(name, folder, test_cmd, env)
     try:
         if finding.ecosystem == "npm" and shutil.which("npm"):
             install = "npm ci --ignore-scripts --no-audit --no-fund"
@@ -144,14 +191,25 @@ def run_tests(folder: Path, finding: Finding, test_cmd: str) -> Check:
             done = _sh(install, folder, BUILD_TIMEOUT)
             if done.returncode != 0:
                 return Check(name, False, f"npm install failed: {done.stderr.strip()[-300:]}")
-        done = _sh(test_cmd, folder, TEST_TIMEOUT)
     except FileNotFoundError as err:
         return Check(name, False, f"cannot run `{test_cmd}`: {err}")
     except subprocess.TimeoutExpired:
         return Check(name, False, f"`{test_cmd}` timed out")
+    return _run_command(name, folder, test_cmd)
+
+
+def _run_command(name: str, folder: Path, command: str, env: dict | None = None) -> Check:
+    try:
+        done = _sh(command, folder, TEST_TIMEOUT, env)
+    except FileNotFoundError as err:
+        return Check(name, False, f"cannot run `{command}`: {err}")
+    except subprocess.TimeoutExpired:
+        return Check(name, False, f"`{command}` timed out")
     if done.returncode == 0:
-        return Check(name, True, test_cmd)
-    return Check(name, False, f"`{test_cmd}` failed:\n{(done.stdout + done.stderr).strip()[-600:]}")
+        return Check(name, True, command)
+    if done.returncode == PYTEST_NO_TESTS and "pytest" in command:
+        return Check(name, True, "the service has no tests", ran=False)
+    return Check(name, False, f"`{command}` failed:\n{(done.stdout + done.stderr).strip()[-600:]}")
 
 
 def docker_ready(folder: Path) -> str | None:
