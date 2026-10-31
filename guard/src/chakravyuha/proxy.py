@@ -30,7 +30,7 @@ HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
     "trailers", "transfer-encoding", "upgrade",
 }  # fmt: skip
-REQUEST_DROP = HOP_BY_HOP | {"host", "content-length", "x-hedwig-test-ip"}
+REQUEST_DROP = HOP_BY_HOP | {"host", "content-length"}
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
@@ -39,7 +39,6 @@ SECURITY_HEADERS = {
 }
 INTERNAL = "/__hedwig"
 CHALLENGE_PATH = f"{INTERNAL}/challenge"
-TEST_IP_HEADER = "x-hedwig-test-ip"
 
 
 class BodyTooLarge(Exception):
@@ -70,7 +69,6 @@ class Guard:
         config: Config,
         *,
         token: str | None = None,
-        demo: bool = False,
         transport: httpx.AsyncBaseTransport | None = None,
         bus: EventBus | None = None,
         state: State | None = None,
@@ -79,7 +77,6 @@ class Guard:
     ) -> None:
         self.config = config
         self.token = token
-        self.demo = demo
         self.state = state or State(config)
         self.bus = bus or EventBus(config.data_dir, stdout=config.stdout_events)
         self.secret = load_secret(config.data_dir)
@@ -97,8 +94,6 @@ class Guard:
 
     # -- helpers ---------------------------------------------------------------------------
     def client_ip(self, request: Request) -> str:
-        if self.demo and (test_ip := request.headers.get(TEST_IP_HEADER)):
-            return test_ip.strip()[:64]
         return request.client.host if request.client else "unknown"
 
     def route(self, path: str) -> tuple[str | None, Service | None, str]:

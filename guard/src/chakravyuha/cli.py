@@ -22,10 +22,20 @@ async def serve(servers: list[uvicorn.Server]) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+def load_env(path: Path) -> None:
+    """KEY=VALUE lines from guard/.env; variables already set in the environment win."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="chakravyuha", description=__doc__)
     parser.add_argument("--config", type=Path, default=config.DEFAULT_CONFIG)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")  # one machine: loopback only
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--dashboard-port", type=int, default=8090)
     parser.add_argument("--no-dashboard", action="store_true")
@@ -33,16 +43,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     settings = config.load(args.config)
-    demo = os.environ.get("CHAKRA_DEMO") == "1"
-    if demo:
-        print("chakravyuha: DEMO MODE, X-Hedwig-Test-IP is trusted. Never use with real users.")
+    load_env(config.GUARD_ROOT / ".env")
     if not settings.services:
         print(f"chakravyuha: no services in {args.config}; every request will get 404.")
     for name, service in settings.services.items():
         has_key = bool(service.api_key_env and os.environ.get(service.api_key_env))
         if not service.challenge and not has_key:
             print(f"chakravyuha: {name} has challenge: false and no API key set; ring 3 is open.")
-    app = create_app(settings, token=os.environ.get("CHAKRA_TOKEN"), demo=demo)
+    app = create_app(settings, token=os.environ.get("CHAKRA_TOKEN"))
     quiet = {"log_level": "warning", "access_log": False}
     servers = [uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, **quiet))]
     print(f"chakravyuha: guard on http://{args.host}:{args.port}")

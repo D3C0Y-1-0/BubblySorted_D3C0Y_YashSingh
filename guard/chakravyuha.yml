@@ -1,6 +1,6 @@
 # Hedwig Chakravyuha settings. Everything has a safe default; see chakravyuhaPLAN.md.
 mode: block                     # block | monitor
-allowlist: []                   # the demo tablet's hotspot IP: never trapped or banned
+allowlist: [127.0.0.1]          # the demo browser: never trapped or banned (still challenged)
 trap_minutes: 30                # max 60
 suspicion:
   tarpit: 3

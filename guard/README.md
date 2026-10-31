@@ -12,9 +12,11 @@ uv run --project guard python guard/tools/stub_bank.py   # stand-in bank on :900
 uv run --project guard pytest guard/tests     # tests
 ```
 
-Environment: `CHAKRA_TOKEN` (events endpoint and dashboard controls), `CHAKRA_SECRET`
-(optional; otherwise a key is kept in `guard/data/secret.key`), `CHAKRA_DEMO=1` (trust
-`X-Hedwig-Test-IP`; demo only, never with real users).
+Everything runs on one machine and listens on `127.0.0.1` only. The browser on the laptop is
+the real user (`127.0.0.1`, allowlisted); attack scripts send from `127.0.0.2` and up.
+
+Environment (or `guard/.env`): `CHAKRA_TOKEN` (events endpoint and dashboard controls),
+`CHAKRA_SECRET` (optional; otherwise a key is kept in `guard/data/secret.key`).
 
 Ring 3 (challenge): a client without a valid `hw_session` cookie gets `403` with a proof-of-work
 puzzle (an HTML page that solves it for browsers; JSON plus the `X-Hedwig-Challenge` and

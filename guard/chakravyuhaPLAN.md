@@ -12,17 +12,24 @@ In the Mahabharata, the Chakravyuha is a spiral army formation: rings of warrior
 - Conventions as in the main repo: Python 3.12, uv, ruff (line length 100), minimal tests.
 
 ## Where it runs
-Same as guardPLAN: the bank runs on the demo laptop with Docker Compose. The laptop and the tablet share the phone hotspot, and the tablet browses `http://<laptop hotspot IP>:8080`. Only the Guard's port is open on the hotspot. The bank services sit on an internal Compose network that only the Guard can reach. The dashboard runs on `127.0.0.1:8090`, so it shows on the laptop screen only. Elasticsearch (9200) and Kibana (5601) are bound to 127.0.0.1 as well: a local demo setup has no login on them, so they must never be reachable from the hotspot.
+**Everything runs on one machine, the demo laptop.** There is no hotspot, no tablet and no second device: nothing listens beyond loopback.
+
+- The **Guard** runs natively on the laptop (not in a container, see "Client IP") on `127.0.0.1:8080`. The **dashboard** is on `127.0.0.1:8090`.
+- The **bank services** run in Docker Compose. Each publishes its port on `127.0.0.1` only (`web` on 9100, then 9101 to 9104), so the natively running Guard can reach them. They are reachable on the laptop without the Guard too; on a single demo machine that is accepted, and the demo always goes through `:8080`.
+- **Elasticsearch** (9200), **Logstash** (5000) and **Kibana** (5601) run in the same Compose project, bound to `127.0.0.1`.
+- **The real user** is a browser on the laptop. It connects from `127.0.0.1`, which is allowlisted.
+- **Attackers** are scripts in `guard/tools/attacks/` on the same laptop. Each one sends from its own loopback address (`127.0.0.2` and up; the whole `127.0.0.0/8` block is loopback), so the Guard sees each one as a separate client by its real connection address. A distributed attack uses hundreds of these addresses. No header is trusted for this.
 
 ```
-tablet / attacker --hotspot--> [Guard :8080] --> real bank services (internal only)
-                                 |   |   \--> decoy bank (ring 7, inside the Guard)
-                                 |   |
-              SSE (live) <-------/   \---- events (TCP json_lines) ----> [Logstash]
-                  |                                                         |
-     [Chakravyuha dashboard :8090]          [agents] <--- queries --- [Elasticsearch] --> [Kibana :5601]
-       (laptop screen only)                     |                          (laptop screen only)
-                                                \--> actions (trap, ban, level) back to the Guard
+browser 127.0.0.1 ----------\
+attack scripts 127.0.0.x ----+--> [Guard 127.0.0.1:8080] --> bank services (Compose, 127.0.0.1:91xx)
+                                    |   |   \--> decoy bank (ring 7, inside the Guard)
+                                    |   |
+                 SSE (live) <-------/   \---- events (TCP json_lines) ----> [Logstash :5000]
+                     |                                                         |
+        [Chakravyuha dashboard :8090]          [agents] <--- queries --- [Elasticsearch :9200] --> [Kibana :5601]
+                                                   |
+                                                   \--> actions (trap, ban, level) back to the Guard
 ```
 
 ## The seven rings
@@ -56,13 +63,13 @@ Requests move inward ring by ring, outer to inner, and the first ring that decid
 
   At 3 points the client is tarpitted. At 5 the challenge gets much harder and the session time shortens. At 10 the client is trapped. Clear attacks (a payload, a brute-force trip) score 10 at once.
 - **The formation tightens under attack.** At the `alert` and `siege` levels the Commander halves rate limits, lowers the trap threshold and raises the challenge difficulty for everyone except allowlisted clients.
-- **Allowlisted is not exempt.** The demo tablet still passes the challenge and every ring like any other client; the allowlist only means it is never trapped or banned. This way the demo shows a real user getting through the rings, not around them.
+- **Allowlisted is not exempt.** The demo browser (`127.0.0.1`) still passes the challenge and every ring like any other client; the allowlist only means it is never trapped or banned. This way the demo shows a real user getting through the rings, not around them.
 - **Honest limits.** None of this makes the bank impossible to reach. A determined attacker with real browsers and many IPs can pass the challenge; what it buys is cost and time, and every step it takes is recorded. Tarpitted connections are capped (default 200) so slowing attackers down can never exhaust the Guard itself; beyond the cap they get 429.
 
 Rules every ring follows:
 - **Fail open.** If a rule crashes, the request goes through and a `guard-error` event is recorded. Availability beats a false block. (The challenge ring fails open too: if it breaks, clients pass without a puzzle.)
 - Request bodies up to 10 MB are buffered for inspection; larger ones get 413. Only HTML responses up to 512 KB are buffered.
-- **Client IP** is the connection address. `X-Forwarded-For` is ignored. Docker Desktop on Windows or Mac hides real client IPs, so there the Guard runs natively on the host, not in a container.
+- **Client IP** is the connection address. `X-Forwarded-For` and every other header are ignored. Docker Desktop rewrites the source address of connections into a container, which would merge every loopback attacker into one IP, so the Guard runs natively on the host, not in a container.
 - **Modes:** `block` (default) or `monitor` per service. In monitor mode every ring logs what it would have done and lets the request through.
 - **Machine clients:** a service marked `challenge: false` (an API used by programs, not browsers) skips ring 3 and must send its API key instead.
 
@@ -72,7 +79,7 @@ Rules every ring follows:
 - **The maze looks like the real thing from the outside.** It sits behind the same challenge, sets the same kind of signed cookie, uses the same routes and returns the same headers and error pages. Nothing in how a client gets in tells it which side it is on.
 - **Staying:** the trap is keyed by client IP plus the decoy session cookie. Every later request from that client, on any path and with any payload, is answered by the decoy. This is the "cannot leave" part.
 - **The decoy bank** answers the same paths as the real one (`/transaction/...`, `/account/...`) with fake users, balances and transactions. It is served by the Guard process itself, not a separate container. Its content is generated before the demo by the Illusionist agent and saved as JSON in `guard/`, so the trap answers instantly and works without the internet.
-- **Leaving:** every trap expires (default 30 min, at most 60). The dashboard has a release button. Allowlisted IPs (the demo tablet) are never trapped.
+- **Leaving:** every trap expires (default 30 min, at most 60). The dashboard has a release button. Allowlisted IPs (the demo browser) are never trapped.
 - **Honest limit:** a careful attacker can notice a decoy. The goal is to slow and study it and to catch honeytoken use, not to fool it forever.
 
 ## Honeytokens
@@ -103,7 +110,7 @@ Agents run on a slow loop, about every 5 seconds, and never sit in the request p
 A web page served by the Guard on `127.0.0.1:8090`: plain HTML, CSS and JavaScript, no build step, no CDN, so it works offline. It gets live updates from the Guard over Server-Sent Events.
 
 What it shows:
-- **The formation:** seven concentric rings drawn in SVG. Each client is a dot, coloured by its suspicion score. Stopped clients sit on the ring that stopped them, so you can see how deep each one got; trapped ones circle inside the maze; the tablet travels through every ring to the centre. The rings rotate slowly, faster at higher alert levels.
+- **The formation:** seven concentric rings drawn in SVG. Each client is a dot, coloured by its suspicion score. Stopped clients sit on the ring that stopped them, so you can see how deep each one got; trapped ones circle inside the maze; the demo browser travels through every ring to the centre. The rings rotate slowly, faster at higher alert levels.
 - **Live numbers:** requests per second, allowed and blocked, stops per ring, challenges issued and solved, clients tarpitted, active bans and traps, distinct passwords tried, current alert level.
 - **Top suspects:** the clients with the highest suspicion score, with the signals that added up to it.
 - **Campaigns:** the Scout's current list, with the IPs and the target of each.
@@ -136,7 +143,7 @@ Events go to stdout, to a 1,000-entry ring buffer (served to the dashboard and a
 ELK is the record and the analysis layer. The Guard and the dashboard stop attacks and show them live; ELK keeps every event, makes them searchable and gives the agents and the mentor the long view.
 
 - **Shipper:** a background queue in the Guard sends events to Logstash over TCP (json_lines). A slow or stopped Logstash never delays a request. The queue holds 10,000 events, drops the oldest, and counts the drops (shown on the dashboard).
-- **Logstash:** a `tcp` input, then filters that parse the user agent (tablet vs a script), add GeoIP for public addresses only, drop anything sensitive and tag the dataset. It writes to `chakravyuha-YYYY.MM.DD` through an index template that types `source.ip` as `ip`, `ring` as a number and the other fields as keywords.
+- **Logstash:** a `tcp` input, then filters that parse the user agent (browser vs a script), drop anything sensitive and tag the dataset. It writes to `chakravyuha-YYYY.MM.DD` through an index template that types `source.ip` as `ip`, `ring` as a number and the other fields as keywords.
 - **Elasticsearch:** single node, 1 GB heap, security off because it is bound to 127.0.0.1. One Elastic version pinned for all three components (check the current one when building).
 - **Kibana:** a dashboard committed as `guard/deploy/elk/kibana/dashboard.ndjson`, imported automatically by a setup container. Panels: attempts over time, allowed vs blocked vs trapped, stops per ring, challenges issued vs solved, suspicion over time, distinct passwords tried, top source IPs, bans and traps timeline, campaigns, honeytoken alarms, and a breakdown by category.
 - **Timing, honestly:** events reach Elasticsearch about 1 to 2 seconds after the Guard emits them, so an agent decision based on ELK lands roughly 3 to 7 seconds after a pattern starts. That is why the hot path never waits on ELK. Kibana's own alert rules run at most once a minute, so the agents do the alerting, not Kibana.
@@ -166,8 +173,8 @@ The Guard protects the demo bank, so the bank is built on this track too. It fol
 **What the Guard adds to the contract:**
 - `POST /login` on `transaction` with fake users only: `401` for a bad password, `200` and a session for the demo user. Accepts JSON or form bodies with `username` and `password`.
 - Every service lists its routes in `guard/chakravyuha.yml` (ring 4), and the list matches what the service really serves. The decoy bank (ring 7) answers the same routes with the same shapes, so the two cannot be told apart by path.
-- The services listen only on the internal Compose network. The only way in from the hotspot is the Guard.
-- The **tablet page** is a small static service (`web`, prefix `/`) with a tile per service. Only a failing service's tile greys out. It is a real browser page, so it also runs the ring 3 challenge script.
+- The services publish their ports on `127.0.0.1` only (see "Where it runs").
+- The **home page** is a small static service (`web`, prefix `/`) with a tile per service. Only a failing service's tile greys out. It is a real browser page, so it also runs the ring 3 challenge script. It has no package manifest, so `hedwig init` does not count it as a service.
 
 **Estate:**
 7. `cd guard/bank && hedwig init` detects exactly the 4 or 5 services with the right languages. After editing tier and allow in `guard/bank/.hedwig.yml`:
@@ -175,8 +182,8 @@ The Guard protects the demo bank, so the bank is built on this track too. It fol
    - account: high, `[open_fix_pr]`
    - support: medium, `[open_fix_pr]`
    - notifications: low, `[open_fix_pr, auto_merge_if_verified, takedown]`
-8. `docker compose -f guard/deploy/docker-compose.yml up` starts all services, the Guard (natively on Windows/Mac, see "Client IP"), the tablet page and ELK. `make demo-reset` (backed by a Python script, so it also runs on Windows without make) restores the seeded state: seeded versions, empty logs, empty traps and bans.
-9. Each service can also be deployed on Render as a Docker web service with a health check path. That copy is for Hedwig's takedown and rollback demo (main track, Phase 6) and is **not** behind the Guard.
+8. `docker compose -f guard/deploy/docker-compose.yml up` starts all services, the home page and ELK; the Guard runs natively next to it (see "Client IP"). `make demo-reset` (backed by a Python script, so it also runs on Windows without make) restores the seeded state: seeded versions, empty logs, empty traps and bans.
+9. Render deployment: dropped on this track. Everything is demoed locally on one machine.
 
 **Expected Hedwig outcomes** (a pytest e2e file in `guard/tests/` plus a live run):
 
@@ -186,7 +193,7 @@ The Guard protects the demo bank, so the bank is built on this track too. It fol
 | `replay log4shell` then respond | Transaction fix verified, auto-merged, deployed, smoke OK, no downtime |
 | account finding | Bot PR, `hedwig:needs-review`, not merged |
 | PR adding vulnerable phpmailer to support | Red check. Admin merge, PDF emailed to the PM, fix PR |
-| `simulate-attack notifications --compromise` + `replay jsonwebtoken` | Evidence 4, notifications suspended, only the offers tile greys out |
+| `simulate-attack notifications --compromise` + `replay jsonwebtoken` | Evidence 4, notifications suspended, only the notifications tile greys out |
 | A `${jndi:` request through the Guard | Trapped by ring 6, and `hedwig status` shows evidence 3 for transaction |
 | `hedwig dash` | transaction patched, notifications asleep, account and support awaiting a human |
 
@@ -196,7 +203,7 @@ PHP is not needed on the laptop: `support` builds and tests inside its Docker im
 Everything has safe defaults. Overrides go in `guard/chakravyuha.yml` (the Guard does not edit `.hedwig.yml`):
 ```yaml
 mode: block                     # block | monitor
-allowlist: [192.168.43.20]      # the demo tablet, never trapped or banned (still challenged)
+allowlist: [127.0.0.1]          # the demo browser, never trapped or banned (still challenged)
 trap_minutes: 30                # max 60
 suspicion:
   tarpit: 3
@@ -219,10 +226,10 @@ services:
     redirect_hosts: [bank.example]
     uploads: false              # or a list of allowed extensions
 ```
-Secrets and connection settings come from the environment: `GROQ_API_KEY`, `CHAKRA_TOKEN` (dashboard controls and the events endpoint), the SMTP variables, and for ELK `CHAKRA_LOGSTASH` (host:port), `CHAKRA_ELASTIC_URL` and `CHAKRA_KIBANA_URL` (used for the links in emails). All of them are set by Compose.
+Secrets and connection settings come from the environment: `GROQ_API_KEY`, `CHAKRA_TOKEN` (dashboard controls and the events endpoint), the SMTP variables, and for ELK `CHAKRA_LOGSTASH` (host:port, default `127.0.0.1:5000`), `CHAKRA_ELASTIC_URL` (default `http://127.0.0.1:9200`) and `CHAKRA_KIBANA_URL` (default `http://127.0.0.1:5601`, used for the links in emails). They can live in `guard/.env`, which the `chakravyuha` command reads and git ignores.
 
-### Demo-only switch
-To show distributed attacks from one laptop, the Guard accepts an `X-Hedwig-Test-IP` header as the client IP **only** when `CHAKRA_DEMO=1`. It is off by default and must never be on with real users connected.
+### Simulated attackers
+Attack scripts in `guard/tools/attacks/` bind their sockets to loopback addresses from `127.0.0.2` up, so each simulated attacker has a real, distinct connection address. The earlier `X-Hedwig-Test-IP` header switch is removed: with real loopback addresses nothing needs to trust a header.
 
 ## Build phases
 | Phase | What | Done when |
@@ -232,9 +239,9 @@ To show distributed attacks from one laptop, the Guard accepts an `X-Hedwig-Test
 | C3 | Dashboard v1: rings SVG, dots by suspicion, live numbers, event log over SSE | A flood shows as dots stopping on ring 2 within a second |
 | C4 | Ring 3: proof-of-work challenge, signed sessions bound to IP, difficulty by suspicion and level, `challenge: false` for machine APIs | A browser passes without noticing. A script without a solution gets 403. A cookie copied to another IP is rejected |
 | C5 | Ring 4: route lists per service, 404 for the rest, probe scoring | An unlisted path never reaches the upstream. Probing `/.env`, `/admin` and `.git` traps the client |
-| C6 | The trap and the decoy bank: trap list, decoy routes behind the same challenge, the random "success" after a brute-force trip, expiry, allowlist, release button | After a brute-force trip, every request from that IP gets decoy data, the real service sees none of them, and the tablet is unaffected. The decoy's headers and cookies match the real ones |
+| C6 | The trap and the decoy bank: trap list, decoy routes behind the same challenge, the random "success" after a brute-force trip, expiry, allowlist, release button | After a brute-force trip, every request from that IP gets decoy data, the real service sees none of them, and the demo browser is unaffected. The decoy's headers and cookies match the real ones |
 | C7 | Honeytokens: planting, detection on every ring, the immediate email, the dashboard alarm | Using a planted API key from any IP raises the alarm and bans the linked IPs |
-| C8 | Local stack: `guard/deploy/docker-compose.yml` (Guard, a stub login service until the bank exists, Elasticsearch, Logstash, Kibana), the Hedwig log link, and a script that prints the tablet URL | The tablet loads the page through the Guard over the hotspot. The dashboard, Elasticsearch and Kibana answer on the laptop but not on the hotspot address. `hedwig status` shows evidence 3 after a payload attack |
+| C8 | Local stack: `guard/deploy/docker-compose.yml` (bank services, home page, Elasticsearch, Logstash, Kibana, every port on `127.0.0.1`), the Guard config pointing at them, the Hedwig log link, and `guard/tools/demo.py` that checks the stack and prints the URLs | The browser loads the home page through the Guard on `127.0.0.1:8080`. Every published port is bound to `127.0.0.1` only. `hedwig status` shows evidence 3 after a payload attack |
 | C9 | ELK pipeline: the shipper, the Logstash pipeline, the index template, the Kibana dashboard import, the JSONL backfill script, and the agents reading from Elasticsearch with the buffer fallback | Guard events appear in Kibana within 3 seconds. Stopping Logstash does not slow or break requests, the drop counter rises, and the backfill restores the missing events. With Elasticsearch stopped, the agents keep working from the buffer |
 | C10 | Agents: Scout, Commander and Illusionist, the action schema and its limits, the rule fallback, alert levels tightening the rings, and the agent feed on the dashboard | The distributed case below is caught with and without a Groq key. At `siege`, limits halve and challenges get harder. An injected "release" instruction in a URL changes nothing |
 | C11 | PM digest | A burst of 500 blocks sends exactly one email. Honeytoken use sends one at once. An email failure leaves proxying working |
@@ -244,17 +251,17 @@ To show distributed attacks from one laptop, the Guard accepts an `X-Hedwig-Test
 
 | Phase | What | Done when |
 |---|---|---|
-| B1 | `transaction` (Java, log4j 2.14.1, `POST /login`) and the `web` tablet page | Contract items 1 to 6 hold for transaction. The Guard proxies the tablet page and the login, and a bad password gives 401 |
+| B1 | `transaction` (Java, log4j 2.14.1, `POST /login`) and the `web` home page | Contract items 1 to 6 hold for transaction. The Guard proxies the home page and the login, and a bad password gives 401 |
 | B2 | `account` (Rust), `support` (PHP), `notifications` (Node) | Contract items 1 to 6 hold for each. `hedwig init` in `guard/bank` finds all four with the right languages |
 | B3 | Estate: `.hedwig.yml` tiers, Compose wiring, `make demo-reset`, the e2e test file | The expected-outcomes table above passes (the GitHub and Render rows once the main track has those phases) |
 
 Build in number order. B1 goes in before C8, so the local stack starts with the real login service (the stub stays for tests). B2 and B3 can be built alongside C9 to C12. The dashboard comes early so every later phase is visible as it lands. The hard-to-enter rings (challenge, routes) come right after it, then the trap and honeytokens, which are the parts nobody else has. The stack and ELK come before the agents so the agents are built against Elasticsearch from the start.
 
 ## Demo script
-1. **Normal traffic:** the tablet opens the bank, solves the challenge without noticing, and its dot travels through all seven rings to the centre.
+1. **Normal traffic:** a browser on the laptop opens `http://127.0.0.1:8080`, solves the challenge without noticing, and its dot travels through all seven rings to the centre.
 2. **Getting in is hard:** a script without a session is stopped at ring 3. A scanner probing `/.env`, `/admin` and `.git` turns red on the dashboard as its suspicion climbs, gets tarpitted, then trapped.
-3. **Single-IP brute force, 500 passwords** (a script that does solve the challenge): 8 attempts reach the login, each answered more slowly, then ring 5 trips. A few attempts later one "succeeds" and the attacker is inside the decoy. The dashboard shows it circling the maze while the tablet keeps working.
-4. **Distributed brute force, 500 IPs with one attempt each** (demo switch on): no per-IP counter trips. Within about 5 seconds the Scout names the campaign, traps the IPs and throttles the username. The Commander moves the level to `alert`, and every ring visibly tightens.
+3. **Single-IP brute force, 500 passwords** (a script that does solve the challenge): 8 attempts reach the login, each answered more slowly, then ring 5 trips. A few attempts later one "succeeds" and the attacker is inside the decoy. The dashboard shows it circling the maze while the browser keeps working.
+4. **Distributed brute force, 500 IPs with one attempt each** (500 loopback addresses): no per-IP counter trips. Within about 5 seconds the Scout names the campaign, traps the IPs and throttles the username. The Commander moves the level to `alert`, and every ring visibly tightens.
 5. **Honeytoken:** the trapped attacker finds the fake admin key in the decoy and uses it. Red alarm on the dashboard, the linked IPs banned, an email to the PM within seconds.
 6. **Payload:** a `${jndi:` request is trapped, then `hedwig status` shows evidence 3 for that service.
 7. **Investigation:** switch to Kibana and show the whole attack: every attempt with the ring that stopped it, 8 logins allowed through and the rest trapped or blocked, 500 distinct password fingerprints, the campaign timeline and the honeytoken use, all searchable by IP.
@@ -264,14 +271,15 @@ The bank needs `POST /login` on the transaction service (fake users only: 401 fo
 
 ## Verification
 - **Minimal tests (about 18), all offline with email and the model mocked:** rate limit then ban; suspicion adds up and decays; tarpit cap holds; no challenge solution gets 403; a session cookie fails on another IP; an unlisted route never reaches the upstream; brute-force count reset; no password in any event; trapped client never reaches the upstream; trap expiry; allowlist never trapped; honeytoken detected on every ring; Scout rule A on canned events; agent action outside the schema rejected; prompt-injection string in a URL ignored; digest sends once; fail open on a crashing rule; the shipper never blocks a request when Logstash is down; agents fall back to the buffer when Elasticsearch is down (Elasticsearch mocked with canned results).
-- **Rehearsal:** the demo script end to end with the tablet on the hotspot as the real user.
+- **Rehearsal:** the demo script end to end on the laptop, with a browser as the real user.
 
 ## Kept from guardPLAN, changed or dropped
 | From guardPLAN | Here |
 |---|---|
-| Gateway in front, local over the hotspot, block by default with monitor mode | kept |
+| Gateway in front, block by default with monitor mode | kept, on one machine (hotspot and tablet dropped) |
 | Rate limits, brute force, payload rules, open redirect, injected form, uploads, hashes, security headers | kept, as rings 2, 5 and 6 |
-| ECS-style events, password never logged, fail open, demo test-IP switch | kept |
+| ECS-style events, password never logged, fail open | kept |
+| Demo test-IP header switch | dropped: attackers use real loopback addresses |
 | PM digest over SMTP | kept, written by the Commander, plus instant honeytoken emails |
 | Distributed brute force and password spraying detector | kept, run by the Scout against Elasticsearch, with a plain-rule and in-memory fallback |
 | Evidence link to Hedwig | kept, through the service log files instead of a `guard-sync` command |
@@ -294,6 +302,4 @@ The bank needs `POST /login` on the transaction service (fake users only: 401 fo
 - A laptop with Docker and at least 8 GB of RAM free: the ELK stack takes about 4 GB (Elasticsearch heap 1 GB, Logstash 512 MB). On Linux, `vm.max_map_count=262144` must be set for Elasticsearch. On Windows, Docker Desktop with the WSL 2 backend needs the same setting inside WSL.
 - A Gmail app password for the PM email, unless the team prefers another provider.
 - A Groq API key (optional; the rule fallback runs without it).
-- A rehearsal check that the tablet can reach the laptop's hotspot IP (some hotspots isolate devices).
-- The tablet's hotspot IP for the allowlist.
 - A word with the main-track owner about the one-line honeytoken marker in `evidence.py`.

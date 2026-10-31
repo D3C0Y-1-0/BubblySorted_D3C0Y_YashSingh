@@ -39,7 +39,7 @@ def leading_zero_bits_ok(token: str, nonce: str, bits: int) -> bool:
 
 
 def solve(token: str, bits: int) -> str:
-    """The reference solver (tests and demo attack scripts)."""
+    """The reference solver (tests and the attack scripts)."""
     nonce = 0
     while not leading_zero_bits_ok(token, str(nonce), bits):
         nonce += 1
