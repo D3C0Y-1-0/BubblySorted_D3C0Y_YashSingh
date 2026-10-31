@@ -1,5 +1,7 @@
 import json
+import shutil
 
+from hedwig.cli import scan_cmd
 from hedwig.core import engine, versions
 from hedwig.core.advisories import AdvisorySource
 
@@ -74,3 +76,27 @@ def test_missing_advisory_data_is_reported(tmp_path, fixtures):
     source = AdvisorySource(offline=True, directory=tmp_path / "nothing")
     with pytest.raises(AdvisoryUnavailable):
         engine.scan(fixtures / "projects", source, save=False)
+
+
+def test_kev_unavailable_is_reported(fixtures, tmp_path):
+    shutil.copytree(fixtures / "advisories", tmp_path / "advisories")
+    (tmp_path / "advisories" / "kev.json").unlink()
+    source = AdvisorySource(offline=True, directory=tmp_path / "advisories")
+    result = engine.scan(fixtures / "projects", source, save=False)
+    assert result.findings and not result.kev_available
+    assert any("KEV" in w for w in result.warnings)
+    assert _scan(fixtures).kev_available
+
+
+def test_table_has_one_row_per_package_version(fixtures):
+    findings = _scan(fixtures).findings
+    rows = scan_cmd._rows(findings)
+    keys = [(r.top.package, r.top.version) for r in rows]
+    assert len(keys) == len(set(keys)) < len(findings)
+    lodash = next(r for r in rows if r.top.package == "lodash")
+    assert sorted(lodash.services) == ["broken-after-bump", "node-lodash"]
+    assert len(lodash.ids) > 1 and lodash.top.risk == max(
+        f.risk for f in findings if f.package == "lodash"
+    )
+    log4j = next(r for r in rows if r.top.package.endswith("log4j-core"))
+    assert log4j.kev and log4j.top.id == "CVE-2021-44228"

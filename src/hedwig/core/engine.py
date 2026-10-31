@@ -130,6 +130,8 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
 
     all_cves = sorted({c for _, ds, _ in drafts for d in ds for c in d["cves"]})
     kev = source.kev_cves() if drafts else set()
+    kev_available = kev is not None
+    kev = kev or set()
     epss = source.epss(all_cves) if all_cves else {}
 
     findings: list[Finding] = []
@@ -182,6 +184,7 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
         offline=source.offline,
         packages=len(packages),
         raw_advisories=raw,
+        kev_available=kev_available,
         services=infos,
         findings=findings,
         warnings=warnings + source.warnings,

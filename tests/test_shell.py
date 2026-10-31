@@ -58,3 +58,11 @@ def test_bad_arguments_print_usage(session, capsys):
     assert "Usage: /explain" in capsys.readouterr().out
     shell.handle(session, "/scan --advisories")
     assert "needs a value" in capsys.readouterr().out
+
+
+def test_split_args_keeps_windows_backslashes():
+    line = r"/scan C:\Users\me\shop --json"
+    assert shell.split_args(line, windows=True) == ["/scan", r"C:\Users\me\shop", "--json"]
+    quoted = r'/scan "C:\My Projects\shop"'
+    assert shell.split_args(quoted, windows=True) == ["/scan", r"C:\My Projects\shop"]
+    assert shell.split_args("/scan 'a b' --json", windows=False) == ["/scan", "a b", "--json"]

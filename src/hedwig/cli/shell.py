@@ -1,5 +1,6 @@
 """The interactive Hedwig app: a welcome screen and a slash-command prompt."""
 
+import os
 import shlex
 from collections.abc import Callable
 from pathlib import Path
@@ -206,6 +207,15 @@ class SlashCompleter(Completer):
                 yield Completion(name, start_position=-len(text), display_meta=description)
 
 
+def split_args(line: str, windows: bool = os.name == "nt") -> list[str]:
+    """Split a command line into words, keeping the backslashes in Windows paths."""
+    if not windows:
+        return shlex.split(line)
+    # POSIX mode treats "\" as an escape, so C:\Users would become C:Users.
+    words = shlex.split(line, posix=False)
+    return [w[1:-1] if len(w) > 1 and w[0] == w[-1] and w[0] in "\"'" else w for w in words]
+
+
 def handle(session: Session, line: str) -> None:
     line = line.strip()
     if not line:
@@ -214,7 +224,7 @@ def handle(session: Session, line: str) -> None:
         console.print("Commands start with /. Try /help")
         return
     try:
-        parts = shlex.split(line)
+        parts = split_args(line)
     except ValueError as err:
         console.print(f"[red]{err}[/red]")
         return

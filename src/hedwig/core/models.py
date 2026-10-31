@@ -55,6 +55,7 @@ class ScanResult(BaseModel):
     generated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     packages: int
     raw_advisories: int
+    kev_available: bool = True  # False when the CISA KEV catalog couldn't be loaded
     services: list[ServiceInfo]
     findings: list[Finding]
     warnings: list[str] = Field(default_factory=list)

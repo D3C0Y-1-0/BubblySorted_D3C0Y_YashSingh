@@ -144,10 +144,13 @@ class AdvisorySource:
 
     # -- KEV and EPSS -------------------------------------------------------------------
 
-    def kev_cves(self) -> set[str]:
+    def kev_cves(self) -> set[str] | None:
+        """CVE ids in the CISA KEV catalog, or None when the catalog couldn't be loaded."""
         path = self.directory / "kev.json"
         data = self._cached(path, DAY, lambda: _get_json(KEV_URL, timeout=60), "KEV")
-        return {v["cveID"] for v in (data or {}).get("vulnerabilities", [])}
+        if data is None:
+            return None
+        return {v["cveID"] for v in data.get("vulnerabilities", [])}
 
     def epss(self, cves: list[str]) -> dict[str, float]:
         path = self.directory / "epss.json"
@@ -167,8 +170,11 @@ class AdvisorySource:
         return {c: scores[c] for c in cves if c in scores}
 
     def _cached(self, path: Path, ttl: int, fetch: Callable[[], dict], label: str) -> dict | None:
+        if self.offline and not path.is_file():
+            self.warnings.append(f"{label} data is not cached; run one scan online to fetch it")
+            return None
         if self.offline or _fresh(path, ttl):
-            return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+            return json.loads(path.read_text(encoding="utf-8"))
         try:
             data = fetch()
             path.parent.mkdir(parents=True, exist_ok=True)

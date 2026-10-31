@@ -1,6 +1,7 @@
 """scan, status and explain: the engine's commands, with --json on each."""
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
@@ -60,37 +61,88 @@ def _fix_label(finding: Finding) -> str:
     return finding.package_fix + (" [yellow](major)[/yellow]" if finding.needs_major else "")
 
 
+@dataclass
+class _Row:
+    """Every finding on one package version, across services. `top` has the highest risk."""
+
+    top: Finding
+    services: list[str] = field(default_factory=list)
+    ids: list[str] = field(default_factory=list)
+    kev: bool = False
+
+    @property
+    def advisories(self) -> str:
+        more = len(self.ids) - 1
+        return self.top.id + (f" [dim]+{more} more[/dim]" if more else "")
+
+
+def _rows(findings: list[Finding]) -> list[_Row]:
+    """One table row per package version, so a package with 30 advisories is one line.
+
+    Findings stay per service and per advisory in --json, status and explain; only the
+    table is grouped. Findings arrive sorted by risk, so each row's first one is its top.
+    """
+    rows: dict[tuple[str, str, str], _Row] = {}
+    for f in findings:
+        row = rows.setdefault((f.ecosystem, f.package, f.version), _Row(top=f))
+        if f.service not in row.services:
+            row.services.append(f.service)
+        if f.id not in row.ids:
+            row.ids.append(f.id)
+        row.kev = row.kev or f.kev
+    return list(rows.values())
+
+
+def _kev_label(row: _Row, result: ScanResult) -> str:
+    if row.kev:
+        return "[bold red]yes[/bold red]"
+    return "no" if result.kev_available else "[yellow]?[/yellow]"
+
+
 def _render_scan(result: ScanResult) -> None:
     for warning in result.warnings:
         console.print(f"[yellow]warning:[/yellow] {warning}")
     findings = result.findings
+    rows = _rows(findings)
     if findings:
         table = Table(title=f"Hedwig scan: {result.root}")
         for column in ("severity", "risk", "service", "package", "advisory", "fix to", "KEV"):
             table.add_column(column, overflow="fold")
-        for f in findings[:TABLE_ROWS]:
+        for row in rows[:TABLE_ROWS]:
+            f = row.top
             style = SEVERITY_STYLE[f.severity]
             table.add_row(
                 f"[{style}]{f.severity}[/{style}]",
                 f"{f.risk:.2f}",
-                f.service,
+                ", ".join(row.services),
                 f"{f.package}@{f.version}",
-                f.id,
+                row.advisories,
                 _fix_label(f),
-                "yes" if f.kev else "",
+                _kev_label(row, result),
             )
         console.print(table)
-        if len(findings) > TABLE_ROWS:
-            console.print(f"... and {len(findings) - TABLE_ROWS} more (use --json for all)")
+        if len(rows) > TABLE_ROWS:
+            console.print(f"... and {len(rows) - TABLE_ROWS} more (use --json for all)")
+        if not result.kev_available:
+            console.print("[yellow]?[/yellow] = CISA KEV catalog unavailable, so not checked")
         console.print("\n[bold]Why the top findings rank where they do[/bold]")
-        for f in findings[:REASON_ROWS]:
-            console.print(f"  [bold]{f.id}[/bold] {f.package}@{f.version}: {f.reasoning}")
+        for row in rows[:REASON_ROWS]:
+            f = row.top
+            console.print(
+                f"  [bold]{f.id}[/bold] {f.package}@{f.version} ({', '.join(row.services)}): "
+                f"{f.reasoning}"
+            )
     counts = ", ".join(f"{n} {s}" for s, n in _counts(findings).items() if n)
     console.print(
         f"\n[bold]{result.raw_advisories} raw advisories → {len(findings)} findings[/bold] "
         f"across {len(result.services)} services ({result.packages} packages scanned)"
         + (f": {counts}" if counts else "")
     )
+    if len(rows) < len(findings):
+        console.print(
+            f"[dim]One row per package ({len(rows)} rows). "
+            "Run explain <id> or add --json to see every advisory.[/dim]"
+        )
 
 
 def scan(
