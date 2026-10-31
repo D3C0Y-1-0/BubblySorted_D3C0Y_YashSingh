@@ -4,8 +4,8 @@ Each folder under `projects/` is one service, the same shape `hedwig init` expec
 
 | Folder | Seeded weakness | Purpose |
 |---|---|---|
-| `node-lodash` | `lodash` 4.17.15 | Success path: bump to 4.17.21 keeps tests green |
-| `broken-after-bump` | `lodash` 4.17.15, `_.template` with a multi-name `variable` option | Bump to 4.17.21 breaks the code, so the fix agents must migrate it |
+| `node-lodash` | `lodash` 4.17.15 | Success path: the bump keeps tests green. Current OSV data makes 4.18.0 the package fix |
+| `broken-after-bump` | `lodash` 4.17.15, `_.template` with a multi-name `variable` option | A bump past 4.17.21 breaks the code, so the fix agents must migrate it |
 | `py-yaml` | `PyYAML` 5.3.1, `yaml.load` | Reachable case |
 | `py-yaml-safe` | `PyYAML` 5.3.1, `yaml.safe_load` | Unreachable case |
 | `maven-log4j` | `log4j-core` 2.14.1 (Log4Shell) | Java detection |

@@ -10,3 +10,4 @@ logs/
 .hedwig/work/
 .hedwig/runs/
 .hedwig/cache/
+.hedwig/last-scan.json

@@ -11,7 +11,7 @@ Conditions the demo bank (Phase 8) must meet. Copied from `plan/claudesPLAN.md`.
    - lodash 4.17.15 + jsonwebtoken 8.5.1
 
    Each version is checked on osv.dev.
-2. The vulnerable package is imported in source. User input never reaches the vulnerable path (for example, log4j logs only constants and runs with `-Dlog4j2.formatMsgNoLookups=true`). The data is fake.
+2. The vulnerable package is imported **and called** in source. User input never reaches the vulnerable path (for example, log4j logs only constants and runs with `-Dlog4j2.formatMsgNoLookups=true`). The data is fake.
 3. `GET /health` returns `200 {"status":"ok"}`.
 4. The `test_cmd` that `init` guesses passes offline in under 60s on the seeded version.
 5. A `Dockerfile` and `hedwig.requests.json` with ≥3 requests. Old-vs-old replay shows zero diffs.

@@ -1,0 +1,327 @@
+[
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2020-28500",
+    "cves": [
+      "CVE-2020-28500"
+    ],
+    "fixed_version": "4.17.21",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2020-8203",
+    "cves": [
+      "CVE-2020-8203"
+    ],
+    "fixed_version": "4.17.19",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2021-23337",
+    "cves": [
+      "CVE-2021-23337"
+    ],
+    "fixed_version": "4.17.21",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2025-13465",
+    "cves": [
+      "CVE-2025-13465"
+    ],
+    "fixed_version": "4.17.23",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2026-2950",
+    "cves": [
+      "CVE-2026-2950"
+    ],
+    "fixed_version": "4.18.0",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "broken-after-bump",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2026-4800",
+    "cves": [
+      "CVE-2026-4800"
+    ],
+    "fixed_version": "4.18.0",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "cargo-regex",
+    "package": "regex",
+    "version": "1.5.4",
+    "id": "CVE-2022-24713",
+    "cves": [
+      "CVE-2022-24713"
+    ],
+    "fixed_version": "1.5.5",
+    "package_fix": "1.5.5",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "composer-phpmailer",
+    "package": "phpmailer/phpmailer",
+    "version": "6.4.1",
+    "id": "CVE-2021-34551",
+    "cves": [
+      "CVE-2021-34551"
+    ],
+    "fixed_version": "6.5.0",
+    "package_fix": "6.5.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "composer-phpmailer",
+    "package": "phpmailer/phpmailer",
+    "version": "6.4.1",
+    "id": "CVE-2021-3603",
+    "cves": [
+      "CVE-2021-3603"
+    ],
+    "fixed_version": "6.5.0",
+    "package_fix": "6.5.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2021-44228",
+    "cves": [
+      "CVE-2021-44228"
+    ],
+    "fixed_version": "2.15.0",
+    "package_fix": "2.25.4",
+    "kev": true,
+    "severity": "critical"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2021-44832",
+    "cves": [
+      "CVE-2021-44832"
+    ],
+    "fixed_version": "2.17.1",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2021-45046",
+    "cves": [
+      "CVE-2021-45046"
+    ],
+    "fixed_version": "2.16.0",
+    "package_fix": "2.25.4",
+    "kev": true,
+    "severity": "critical"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2021-45105",
+    "cves": [
+      "CVE-2021-45105"
+    ],
+    "fixed_version": "2.17.0",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2025-68161",
+    "cves": [
+      "CVE-2025-68161"
+    ],
+    "fixed_version": "2.25.3",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2026-34477",
+    "cves": [
+      "CVE-2026-34477"
+    ],
+    "fixed_version": "2.25.4",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2026-34479",
+    "cves": [
+      "CVE-2026-34479"
+    ],
+    "fixed_version": "2.25.4",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "maven-log4j",
+    "package": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1",
+    "id": "CVE-2026-34480",
+    "cves": [
+      "CVE-2026-34480"
+    ],
+    "fixed_version": "2.25.4",
+    "package_fix": "2.25.4",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2020-28500",
+    "cves": [
+      "CVE-2020-28500"
+    ],
+    "fixed_version": "4.17.21",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2020-8203",
+    "cves": [
+      "CVE-2020-8203"
+    ],
+    "fixed_version": "4.17.19",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2021-23337",
+    "cves": [
+      "CVE-2021-23337"
+    ],
+    "fixed_version": "4.17.21",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "low"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2025-13465",
+    "cves": [
+      "CVE-2025-13465"
+    ],
+    "fixed_version": "4.17.23",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2026-2950",
+    "cves": [
+      "CVE-2026-2950"
+    ],
+    "fixed_version": "4.18.0",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "node-lodash",
+    "package": "lodash",
+    "version": "4.17.15",
+    "id": "CVE-2026-4800",
+    "cves": [
+      "CVE-2026-4800"
+    ],
+    "fixed_version": "4.18.0",
+    "package_fix": "4.18.0",
+    "kev": false,
+    "severity": "medium"
+  },
+  {
+    "service": "py-yaml",
+    "package": "PyYAML",
+    "version": "5.3.1",
+    "id": "CVE-2020-14343",
+    "cves": [
+      "CVE-2020-14343"
+    ],
+    "fixed_version": "5.4",
+    "package_fix": "5.4",
+    "kev": false,
+    "severity": "high"
+  },
+  {
+    "service": "py-yaml-safe",
+    "package": "PyYAML",
+    "version": "5.3.1",
+    "id": "CVE-2020-14343",
+    "cves": [
+      "CVE-2020-14343"
+    ],
+    "fixed_version": "5.4",
+    "package_fix": "5.4",
+    "kev": false,
+    "severity": "high"
+  }
+]
