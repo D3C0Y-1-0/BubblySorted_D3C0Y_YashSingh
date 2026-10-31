@@ -1,0 +1,12 @@
+.venv/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+target/
+logs/
+.hedwig/work/
+.hedwig/runs/
+.hedwig/cache/

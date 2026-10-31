@@ -1,0 +1,9 @@
+{"queries": [
+  {"package": {"ecosystem": "npm", "name": "lodash"}, "version": "4.17.15"},
+  {"package": {"ecosystem": "npm", "name": "express"}, "version": "4.21.2"},
+  {"package": {"ecosystem": "npm", "name": "jsonwebtoken"}, "version": "8.5.1"},
+  {"package": {"ecosystem": "PyPI", "name": "PyYAML"}, "version": "5.3.1"},
+  {"package": {"ecosystem": "Maven", "name": "org.apache.logging.log4j:log4j-core"}, "version": "2.14.1"},
+  {"package": {"ecosystem": "crates.io", "name": "regex"}, "version": "1.5.4"},
+  {"package": {"ecosystem": "Packagist", "name": "phpmailer/phpmailer"}, "version": "6.4.1"}
+]}

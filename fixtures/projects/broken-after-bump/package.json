@@ -1,0 +1,11 @@
+{
+  "name": "broken-after-bump",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "lodash": "4.17.15"
+  }
+}

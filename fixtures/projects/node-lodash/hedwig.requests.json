@@ -1,0 +1,5 @@
+[
+  { "method": "GET", "path": "/health" },
+  { "method": "GET", "path": "/capitalize?text=owl" },
+  { "method": "GET", "path": "/sum" }
+]

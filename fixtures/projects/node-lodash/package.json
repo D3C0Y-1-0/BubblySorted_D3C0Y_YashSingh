@@ -1,0 +1,13 @@
+{
+  "name": "node-lodash",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "lodash": "4.17.15"
+  }
+}

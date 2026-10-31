@@ -1,0 +1,7 @@
+{
+    "name": "bank/support",
+    "require": {
+        "php": ">=7.4",
+        "phpmailer/phpmailer": "6.4.1"
+    }
+}
