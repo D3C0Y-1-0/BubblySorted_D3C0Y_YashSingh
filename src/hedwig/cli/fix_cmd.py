@@ -107,6 +107,13 @@ def fix(
             r.run_id,
         )
     console.print(table)
+    for r in runs:
+        if r.branch and r.action != "merged":
+            console.print(
+                f"[bold]{r.package}[/bold]: the change is only on branch [bold]{r.branch}[/bold], "
+                f"not in your files. Review: git diff HEAD...{r.branch}   "
+                f"Apply: git merge {r.branch}"
+            )
 
 
 def _print_plan(spec: engine.ServiceSpec, groups: list[list[Finding]], json_output: bool) -> None:

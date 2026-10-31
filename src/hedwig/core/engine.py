@@ -39,6 +39,16 @@ class ServiceSpec:
     health_path: str = "/health"
 
 
+def _exposed_port(folder: Path) -> int | None:
+    """The first port a service's Dockerfile EXPOSEs."""
+    try:
+        text = (folder / "Dockerfile").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    match = re.search(r"^\s*EXPOSE\s+(\d+)", text, flags=re.M | re.I)
+    return int(match.group(1)) if match else None
+
+
 def _spec(root: Path, name: str, folder: Path, tier: str, raw: dict | None) -> ServiceSpec:
     raw = raw or {}
     log = raw.get("log_path")
@@ -53,7 +63,7 @@ def _spec(root: Path, name: str, folder: Path, tier: str, raw: dict | None) -> S
         allow=list(DEFAULT_ALLOW if raw.get("allow") is None else raw["allow"]),
         log_path=root / log if log else folder / "logs" / "access.log",
         test_cmd=raw.get("test_cmd") or guess,
-        port=int(raw.get("port") or 3000),
+        port=int(raw.get("port") or _exposed_port(folder) or 3000),
         health_path=raw.get("health_path") or "/health",
     )
 

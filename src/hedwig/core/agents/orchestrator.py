@@ -216,7 +216,24 @@ def run_fix(
         pipe.end(step, "ok")
     runs.write_artifact(root, run.run_id, "summary.txt", text.report_summary)
 
-    return _act(pipe, root, repo, spec, run, lead, text, verified)
+    run = _act(pipe, root, repo, spec, run, lead, text, verified)
+    _append_location(root, run, text.report_summary)
+    return run
+
+
+def _append_location(root: Path, run: Run, summary: str) -> None:
+    """Say where the change is, in words from code. The Reporter cannot be trusted with that."""
+    where = {
+        "merged": f"The change is merged into your current branch (also on {run.branch}).",
+        "takedown": f"The service was taken down. The change is only on branch {run.branch}.",
+    }.get(
+        run.action,
+        f"The change is only on branch {run.branch}. It is not in your working files until you "
+        f"merge it (git merge {run.branch}).",
+    )
+    if run.state == "failed":
+        where = "It did NOT pass verification. " + where
+    runs.write_artifact(root, run.run_id, "summary.txt", f"{summary} {where}".strip())
 
 
 def _changed_paths(worktree: Path, relative: str) -> list[str]:
