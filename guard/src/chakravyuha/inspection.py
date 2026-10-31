@@ -94,8 +94,10 @@ WEBSHELL = re.compile(
     rb"|<%.{0,200}?\bRuntime\b|\beval\s*\(\s*(?:base64_decode|\$_(?:GET|POST|REQUEST))",
     re.I | re.S,
 )
-# Outbound HTML checks
+# Outbound HTML checks. A bank legitimately serves a login form, so a password field alone is
+# not phishing; it is only suspicious when the form posts the credentials to a FOREIGN host.
 PASSWORD_FORM = re.compile(rb"<input[^>]+type\s*=\s*['\"]?password", re.I)
+FORM_ACTION = re.compile(rb"""(?:action|formaction)\s*=\s*['"]?([^'"\s>]+)""", re.I)
 OBFUSCATED = re.compile(
     rb"eval\s*\(\s*(?:atob|unescape|String\.fromCharCode)|document\.write\s*\(\s*unescape",
     re.I,
@@ -238,11 +240,19 @@ def scan_upload(body: bytes, uploads, blocked_hashes: set[str]) -> Finding | Non
     return None
 
 
-def scan_response(body: bytes, content_type: str) -> Finding | None:
+def scan_response(body: bytes, content_type: str, own_hosts: set[str]) -> Finding | None:
     if "html" not in content_type.lower():
         return None
+    # A password field is phishing only when a form posts it to a foreign host; the bank's own
+    # same-origin login form is legitimate.
     if PASSWORD_FORM.search(body):
-        return Finding("response", "injected-password-form", "phishing", trap=False, status=502)
+        for match in FORM_ACTION.findall(body):
+            action = match.decode("latin-1", "replace")
+            host = _external_host(action)
+            if host and host not in own_hosts:
+                return Finding(
+                    "response", "credential-exfil-form", "phishing", trap=False, status=502
+                )
     if OBFUSCATED.search(body):
         return Finding("response", "obfuscated-script", "malware", trap=False, status=502)
     return None

