@@ -12,6 +12,6 @@
     "express": "4.21.2",
     "lodash": "4.17.15",
     "jsonwebtoken": "8.5.1",
-    "minimist": "1.2.0"
+    "minimist": "1.2.6"
   }
 }
