@@ -28,11 +28,13 @@ class Check:
     name: str
     ok: bool
     detail: str = ""
+    ran: bool = True  # False when the check had nothing to run (it passes, but proves nothing)
 
     def line(self) -> str:
-        return f"{self.name}: {'pass' if self.ok else 'FAIL'}" + (
-            f" ({self.detail})" if self.detail else ""
-        )
+        verdict = "pass" if self.ok else "FAIL"
+        if not self.ran:
+            verdict = "skipped"
+        return f"{self.name}: {verdict}" + (f" ({self.detail})" if self.detail else "")
 
 
 def git(cwd: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
@@ -110,10 +112,30 @@ def _sh(command: str, folder: Path, timeout: int) -> subprocess.CompletedProcess
     )
 
 
+def _npm_scripts(folder: Path) -> dict:
+    try:
+        return json.loads((folder / "package.json").read_text(encoding="utf-8")).get("scripts", {})
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def run_tests(folder: Path, finding: Finding, test_cmd: str) -> Check:
-    """Install dependencies as locked, then run the service's test command."""
+    """Install dependencies as locked, then run the service's tests.
+
+    A Node service without a test script is built instead. A service with neither has nothing
+    to run, which passes but does not count as verification.
+    """
+    name = "tests"
+    if finding.ecosystem == "npm":
+        scripts = _npm_scripts(folder)
+        if "test" not in scripts:
+            if "build" not in scripts:
+                return Check(
+                    "tests", True, "the service defines no test or build script", ran=False
+                )
+            name, test_cmd = "build", "npm run build"
     if not test_cmd:
-        return Check("tests", False, "no test_cmd for this service")
+        return Check(name, False, "no test_cmd for this service")
     try:
         if finding.ecosystem == "npm" and shutil.which("npm"):
             install = "npm ci --ignore-scripts --no-audit --no-fund"
@@ -121,17 +143,15 @@ def run_tests(folder: Path, finding: Finding, test_cmd: str) -> Check:
                 install = "npm install --ignore-scripts --no-audit --no-fund"
             done = _sh(install, folder, BUILD_TIMEOUT)
             if done.returncode != 0:
-                return Check("tests", False, f"npm install failed: {done.stderr.strip()[-300:]}")
+                return Check(name, False, f"npm install failed: {done.stderr.strip()[-300:]}")
         done = _sh(test_cmd, folder, TEST_TIMEOUT)
     except FileNotFoundError as err:
-        return Check("tests", False, f"cannot run `{test_cmd}`: {err}")
+        return Check(name, False, f"cannot run `{test_cmd}`: {err}")
     except subprocess.TimeoutExpired:
-        return Check("tests", False, f"`{test_cmd}` timed out")
+        return Check(name, False, f"`{test_cmd}` timed out")
     if done.returncode == 0:
-        return Check("tests", True, test_cmd)
-    return Check(
-        "tests", False, f"`{test_cmd}` failed:\n{(done.stdout + done.stderr).strip()[-600:]}"
-    )
+        return Check(name, True, test_cmd)
+    return Check(name, False, f"`{test_cmd}` failed:\n{(done.stdout + done.stderr).strip()[-600:]}")
 
 
 def docker_ready(folder: Path) -> str | None:

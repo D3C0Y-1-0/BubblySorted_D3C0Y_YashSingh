@@ -52,6 +52,11 @@ def chat[T: BaseModel](root: Path, agent: str, system: str, user: str, schema: t
         return schema.model_validate(_json_object(data["choices"][0]["message"]["content"]))
     except httpx.HTTPStatusError as err:
         status = f"http {err.response.status_code}"
+        if err.response.status_code == 404 and "model" in err.response.text:
+            raise AgentError(
+                f"Groq has no model '{model}'. Set a valid one: "
+                f"hedwig config set model {settings.KEYS['model'].default}"
+            ) from err
         raise AgentError(
             f"Groq returned {err.response.status_code}: {err.response.text[:200]}"
         ) from err

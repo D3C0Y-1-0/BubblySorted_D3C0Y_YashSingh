@@ -241,7 +241,8 @@ def _attempts(
 ) -> tuple[bool, list[str]]:
     run, top = pipe.run, findings[0]
     failures: list[str] = []
-    env_problem = runner.docker_ready(spec.folder)
+    has_image = (spec.folder / "Dockerfile").is_file()
+    env_problem = runner.docker_ready(spec.folder) if has_image else None
     baseline = _service_ids(source, spec.folder)
     cases: list[dict] = []
     for attempt in range(MAX_RETRIES + 1):
@@ -297,24 +298,27 @@ def _attempts(
         checks = [runner.run_tests(new_folder, top, spec.test_cmd)]
         if checks[0].ok and env_problem:
             checks.append(runner.Check("differential", False, env_problem))
-        elif checks[0].ok:
+        elif checks[0].ok and has_image:
             diff_check, kept = runner.differential(
                 base_folder, new_folder, run.run_id, spec.port, spec.health_path,
                 known_requests(spec.folder) + cases,
             )  # fmt: skip
             checks.append(diff_check)
             cases = kept
-        else:
-            checks.append(runner.Check("differential", False, "skipped, tests failed"))
+        elif checks[0].ok:
+            checks.append(runner.Check("differential", True, "no Dockerfile", ran=False))
         checks.append(_rescan_check(source, new_folder, top, baseline))
         failed = [c for c in checks if not c.ok]
+        if not failed and not any(c.ran for c in checks if c.name != "re-scan"):
+            failed = [runner.Check("verification", False, "no tests, build or Dockerfile to run")]
+            checks += failed
         pipe.end(step, "failed" if failed else "ok", "; ".join(c.line() for c in checks))
         runs.write_artifact(root, run.run_id, "cases.json", cases)
         if failed:
             run.failed_step = "run"
             failures = [c.line() for c in failed]
-            if env_problem and checks[0].ok:
-                return False, failures  # retrying cannot fix a missing docker
+            if (env_problem and checks[0].ok) or not code_files:
+                return False, failures  # no code the Fixer may edit, so a retry changes nothing
             continue
 
         step = pipe.begin("verifier")
