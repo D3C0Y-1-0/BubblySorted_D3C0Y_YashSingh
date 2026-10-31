@@ -9,6 +9,9 @@ Everything runs on this one laptop. Three stories, about five minutes each:
 ## 0. Before the demo (once)
 
 ```sh
+# update Hedwig to the latest release (>= 0.1.20), then check the tools
+curl -fsSL https://github.com/D3C0Y-1-0/BubblySorted_D3C0Y_YashSingh/releases/latest/download/install.sh | sh
+
 # tools: docker, git, gh (GitHub CLI), uv, node/npm, mvn/java (for the transaction tests)
 gh auth login                       # the account that owns the demo repo
 hedwig config                       # Groq key, SMTP user + app password, PM list (already saved)
@@ -25,7 +28,7 @@ somewhere with internet **before** you go on stage.
 
 ```sh
 # terminal 1: the bank in Docker (4 services, web page, postgres, redis, qdrant, ELK)
-docker compose -f guard/deploy/docker-compose.yml up -d --build      # first time: several minutes
+docker compose -f guard/deploy/docker-compose.yml up -d --build      # first time: ~10 minutes (ELK images are big), do it before the demo
 
 # terminal 2: the Guard (the defence in front of the bank) and its dashboard
 uv run --project guard chakravyuha
@@ -63,24 +66,22 @@ its code tree, `/` to filter, `s` `v` `r` `x` for quick filters.
 
 ## 3. Story 2: a vulnerable PR gets merged (6 min)
 
-Create the two demo PRs on a `test` branch (never on `main`):
-
-```sh
-uv run python tools/demo_prs.py create          # PR "simple" (notifications) + PR "verified" (transaction)
-```
+The two demo PRs are normally already open on GitHub, targeting the `test` branch (never `main`).
+To (re)create them: `uv run python tools/demo_prs.py clean --delete-base && uv run python tools/demo_prs.py create`
+(the `simple` PR is notifications, the `verified` one is transaction).
 
 Switch the bank checkout to `test` and start the watcher:
 
 ```sh
-git fetch && git checkout test
-cd guard/bank && hedwig watch --branch test     # leave it running
+git fetch && git checkout test                 # a clean checkout: no uncommitted changes
+cd guard/bank && hedwig watch --branch test     # leave it running; it ignores older commits
 ```
 
 **a. The bot.** On either PR on GitHub, comment `/hedwig scan` (or `:hedwig scan`). The bot replies
 with the vulnerabilities the PR introduces.
 
 **b. The simple one (notifications, a version bump fixes it).** Merge that PR into `test` on GitHub.
-Within about 20 seconds the watcher prints the incident: notifications is taken down
+Within about 10 to 20 seconds the watcher prints the incident: notifications is taken down
 (`docker compose stop`), the dependency is bumped, a **fix PR** appears on GitHub, the service is
 rebuilt and brought back, and the PM gets a PDF with the timeline. Show the dashboard tile go down and
 come back, the incident log, and the PDF.
@@ -90,6 +91,11 @@ SnakeYAML 1.33 has a known remote-code-execution bug; its new test (a YAML file 
 create objects) **fails** until the code is fixed. The agents bump to SnakeYAML 2.x, edit the
 constructors, re-run the tests (green), the fix PR opens, transaction is rebuilt and comes back up.
 Show the diff of the fix PR: it is a small, reviewed change.
+
+Timing, on a laptop with the free model tier: the simple fix takes about a minute; the transaction
+one about three minutes (the agents edit the code, Maven re-runs the tests, Docker builds the old and
+new images and compares them). While it runs, show the dashboard: the tile goes grey, the incident
+and the Hedwig activity fill in, and `/dash` in another terminal shows the same.
 
 (You can also merge locally instead: `git merge origin/demo/simple-notifications && git push origin test`.)
 
