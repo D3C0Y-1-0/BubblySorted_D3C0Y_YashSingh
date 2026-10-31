@@ -8,12 +8,15 @@ Decisions on top of the team plan:
 1. **Strict engine.** Every finding goes into the response pipeline, whatever its severity. Nothing is ignored. Severity only sets the order and what the report says.
 2. **Response flow.** Agents fix the issue with code changes plus requirement changes, then test and verify it black-box. On a pass, Hedwig auto-merges if `.hedwig.yml` allows it. On a fail, it takes the service down if allowed. Otherwise it leaves the PR for a human and emails the PM.
 3. **Multi-agent fixing system.** Fixer, Tester, Verifier and Reporter each have a strict system prompt. A deterministic orchestrator runs them. All LLM work uses **Qwen on Groq** (`qwen/qwen3.8-27b`, checked against the Groq docs; JSON mode needs `reasoning_format` `hidden` or `parsed`).
-4. **Terminal + engine first.** The GitHub tooling comes after the terminal is complete and uses a **GitHub App**.
+4. **Terminal + engine first.** The demo is **the CLI plus our own terminal dashboard**. GitHub is reduced to a simple PR bot (built-in `GITHUB_TOKEN` and the `gh` CLI). There is no GitHub App and no self-hosted runner.
 5. **One-click install** on Linux and Windows from the terminal, then `hedwig config` for API keys. The installer installs the **latest GitHub Release**, which a pipeline publishes whenever someone pushes to the `release` branch.
 6. **Folder-based services only.** Each folder is one service. `hedwig init` writes `.hedwig.yml` automatically with basic fields.
 7. **PM report is LaTeX → PDF**, emailed to the hardcoded PM `yash1812ys@gmail.com`.
 8. **The bank is built last.** Earlier phases test against fixture projects, and the bank must meet the Bank Contract at the end of this plan.
 9. **Code analysis uses tree-sitter** (imports and call sites for Python, JS, Java, Rust and PHP), from Phase 2.
+10. **The bank runs locally in Docker Compose**, reachable only through the teammate's **Guard** (`plan/guardPLAN.md`: runtime defence against brute force, DDoS, phishing and malware, ELK, its own attack reports to the PM). Hedwig does not duplicate that. Taking a service down is `docker compose stop`, and "deploying" a fix is merging into local `main` and rebuilding that service's image.
+11. **Replay is dropped.** The compromise demo is a PR that adds a vulnerable dependency: a bot comments on it, and if it is merged over the bot's red check, Hedwig reports to the PM and the agents open the fix.
+12. **A web dashboard comes later** from the teammate. Until then the dashboard is the terminal `/dash`.
 
 Cut to avoid overengineering:
 - NVD and the GitHub Advisory DB: OSV already carries CVSS.
@@ -38,7 +41,7 @@ Flow: merge `main` into `release`, bump the version, push, and the release is pu
 - **Linux/macOS:** `curl -fsSL https://github.com/D3C0Y-1-0/BubblySorted_D3C0Y_YashSingh/releases/latest/download/install.sh | sh`
 - **Windows (PowerShell):** `irm https://github.com/D3C0Y-1-0/BubblySorted_D3C0Y_YashSingh/releases/latest/download/install.ps1 | iex`
 - Both scripts install `uv` if it's missing. They then look up the `.whl` asset URL of the latest release through `api.github.com/repos/<repo>/releases/latest` and run `uv tool install --force <wheel-url>`. This doesn't need git on the user's machine, and uv manages Python 3.12 itself. The script ends by printing `Run: hedwig config`. Re-running the one-liner updates Hedwig. **The repo must be public** for these one-liners to work.
-- `hedwig config` prompts for each key with hidden input and writes `~/.hedwig/config.toml` (the same path on both OSes, through `Path.home()`). Keys: `groq_api_key`, `model` (default `qwen/qwen3.8-27b`), `smtp_user`, `smtp_pass`, `pm_email` (default `yash1812ys@gmail.com`). The `render_api_key` and GitHub App keys are added in later phases.
+- `hedwig config` prompts for each key with hidden input and writes `~/.hedwig/config.toml` (the same path on both OSes, through `Path.home()`). Keys: `groq_api_key`, `model` (default `qwen/qwen3.8-27b`), `smtp_user`, `smtp_pass`, `pm_email` (default `yash1812ys@gmail.com`). Later phases add per-project settings in `.hedwig.yml` (`compose`, `gateway`, `compose_service`), not new keys here.
 - `hedwig config set <key> <value>` and `hedwig config show` (masks secrets). Environment variables such as `GROQ_API_KEY` override the file, which CI uses.
 - `hedwig doctor` checks for `git`, `docker`, `npm`, `cargo`, `composer`, `mvn` and `tectonic`, and tells you which features each missing tool disables.
 
@@ -54,7 +57,7 @@ services:
     allow: [open_fix_pr]      # + auto_merge_if_verified, rollback, takedown
     test_cmd: mvn -q test     # guessed per language
 ```
-Optional fields live as comments and are filled in when needed: `log_path` (default `<svc>/logs/access.log`), `port`, `health_path` (default `/health`) and `render_service_id`. Re-running `init` adds new folders and never overwrites what you've edited.
+Optional fields live as comments and are filled in when needed: `log_path` (default `<svc>/logs/access.log`), `port`, `health_path` (default `/health`) and `compose_service` (default: the folder name). The top level of the file can also set `compose:` (path to the compose file) and `gateway:` (the Guard's URL, used by the smoke test). Re-running `init` adds new folders and never overwrites what you've edited.
 
 ### Decision rule (deterministic, `core/policy.py`)
 ```
@@ -76,7 +79,7 @@ Agents never decide. They produce patches, tests, reviews and text, and the gate
 
 **Where.** The orchestrator is plain Python inside the Hedwig engine (`core/agents/orchestrator.py`), and it is the same code everywhere:
 - **Terminal phases:** it runs on the developer's machine through `hedwig fix <service>`.
-- **GitHub phases:** it runs inside the GitHub Actions runner of the `respond` workflow, authenticated as the GitHub App.
+- **Forced-merge flow:** `hedwig watch` on the developer's machine calls the same orchestrator, because the fix has to rebuild a local Docker bank that a cloud runner cannot reach.
 - **No server to host.**
 
 **Isolation.**
@@ -135,12 +138,16 @@ src/hedwig/
   core/runner.py              # worktrees, test_cmd, docker build/run, differential replay
   core/report.py              # Jinja2 -> .tex -> tectonic -> PDF; SMTP email
   core/audit.py               # append-only JSONL audit
-  core/actions.py             # merge / takedown executors (local stubs now, GitHub/Render later)
+  core/actions.py             # merge / takedown / resume executors (takedown and rebuild through core/deploy.py)
+  core/deploy.py              # docker compose: status, stop, start, rebuild, smoke test
+  core/watcher.py             # polls GitHub for PRs merged over a red check, runs the response
+  cli/pr_cmd.py               # pr-check: findings a PR introduces, as a comment and an exit code
   cli/main.py                 # Typer app
   cli/scan_cmd.py             # scan, status, explain (all with --json)
   cli/dash.py                 # Textual dashboard
-fixtures/                     # cached advisories, replay advisories, mini projects, expected results
-plugin/  bank/                # later phases (Hedwig's own GitHub workflows live in .github/ from Phase 5)
+fixtures/                     # cached advisories, mini projects, expected results
+plugin/                       # optional, last
+bank/                         # built by the teammate (runs in Docker Compose behind the Guard)
 ```
 
 ---
@@ -157,7 +164,7 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
   - `py-yaml`: `PyYAML==5.3.1` using `yaml.load`, plus a `py-yaml-safe` copy using `safe_load`.
   - `broken-after-bump`: tests fail on the fixed version, for the verify-fail path.
   - Lockfile-only folders for Maven (`log4j-core 2.14.1`), Cargo (`regex 1.5.4`) and Composer (phpmailer with a known CVE).
-- `fixtures/advisories/` holds cached OSV/KEV/EPSS responses for offline tests, plus the replay advisories `log4shell.json` and `jsonwebtoken.json`.
+- `fixtures/advisories/` holds cached OSV/KEV/EPSS responses for offline tests, including log4shell for the `maven-log4j` fixture.
 - `docs/bank-contract.md` is copied from the end of this plan.
 
 **Done when:**
@@ -187,7 +194,7 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - Log4Shell's reasoning includes "actively exploited (KEV)".
 - An online scan of OWASP NodeGoat and WebGoat finishes in under 60s.
 
-## Phase 2: Policy, reachability, evidence, replay
+## Phase 2: Policy, reachability, evidence
 - `code_index.py` parses each service's source with tree-sitter (`tree-sitter` plus the python, javascript, java, rust and php grammars, which ship prebuilt wheels for Linux, macOS and Windows) and returns the imports and call sites of a package as `(file, line, enclosing function, symbol)`. Variables holding an imported type (`LOG`, `$mail`, a Rust `let`) are followed one step. Test folders are skipped, and a file that fails to parse is skipped with a warning.
 - `reachability.py` uses it. A package is *called* if an imported name or alias appears in a call. If the advisory names affected functions, or `symbols.json` has hints for the package (PyYAML `load`, lodash `template`/`merge`/`set`, jsonwebtoken `verify`/`sign`, regex `new`), only a call to one of those counts. Reachability adjusts confidence and never hides a finding. A package that is imported but never called, or not imported at all, stays in the list.
 - `evidence.py`, per finding:
@@ -198,7 +205,6 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
   - 4 = compromise marker in the log (outbound connection, reverse shell, unexpected process). It raises every finding on the service.
 - The log is `log_path` in `.hedwig.yml`, default `<service>/logs/access.log`.
 - `simulate-attack <service> [--compromise] [--pattern ID]` appends an attack that fits the service's packages to its log.
-- `replay <advisory> [--dry-run]` runs the bundled advisory (`log4shell`, `jsonwebtoken`, in `src/hedwig/data/replay/` with its KEV and EPSS data) through the same pipeline and prints each decision. Nothing acts until Phase 3.
 - `policy.decide(evidence, allow)` follows the decision rule. Every finding gets an action. `allow: []` means observe only, so the action is notify. A missing `allow` defaults to `[open_fix_pr]`.
 - `scan`, `status` and `explain` show evidence, reachability and the decision. All of these are also slash commands in the app.
 
@@ -207,7 +213,6 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - `py-yaml` (calls `yaml.load`) scores higher than `py-yaml-safe` (calls `yaml.safe_load`), and both are listed.
 - Call sites are found for the Node, Python, Java, Rust and PHP fixtures, and a file with a syntax error is skipped with a warning.
 - `simulate-attack` raises evidence to 3, and `--compromise` raises it to 4. With `takedown` allowed that changes the decision to takedown.
-- `hedwig replay log4shell --dry-run --json` gives the expected decision.
 
 ## Phase 3: Multi-agent fixing system (local)
 - `bump.py`, `runner.py`, `llm.py`, `audit.py`, `actions.py`, `runs.py`, `core/agents/*` with prompts, as designed above.
@@ -220,7 +225,7 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - Acting locally:
   - **Merge:** if verified and allowed, fast-forward the fix branch into the current branch.
   - **PR:** `pr.md` is saved, ready for the GitHub phase.
-  - **Takedown:** recorded as `takedown (pending executor)` until the Render phase.
+  - **Takedown:** recorded as `takedown (pending executor)` until Phase 6, which makes it a real `docker compose stop`.
 
 **Done when:**
 - `hedwig fix node-lodash` runs with a live Groq key. lodash moves to the smallest fixed 4.x. Tests, differential replay and re-scan pass, the Verifier approves, verified = true, and the branch merges because the fixture allows it.
@@ -242,95 +247,91 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
   - a card per service (tier, health, risk colour)
   - alert feed and a detail pane (score breakdown, reachability, fixed version, decision)
   - a run timeline with time-to-action, read from `.hedwig/runs` and the audit log
-  - keys: `Enter`, `f` fix, `t` takedown (dry-run first, then confirm), `a` approve, `r` replay, `/` filter, `?` help
+  - keys: `Enter`, `f` fix, `t` takedown (dry-run first, then confirm), `a` approve, `/` filter, `?` help (Phase 5 reworks these keys and the layout)
 
 **Done when:**
 - `hedwig report` produces a PDF on Linux and Windows, and `--email` delivers it to `yash1812ys@gmail.com`.
-- A Textual `Pilot` test asserts that cards and alerts render, `r` adds an alert, and `t` shows a dry-run first.
+- A Textual `Pilot` test asserts that cards and alerts render, and `t` shows a dry-run first.
 - In a manual run, `f` on `node-lodash` shows the run's progress and its final state in the dashboard.
 - A screen recording is saved.
 
-**Part A milestone:** a fresh machine can go one-liner install → `hedwig config` → `hedwig init` → `scan` → `replay` → `fix` → `report` → `dash` with no GitHub involved.
+**Part A milestone:** a fresh machine can go one-liner install → `hedwig config` → `hedwig init` → `scan` → `simulate-attack` → `fix` → `report` → `dash` with no GitHub involved.
 
 ---
 
-# Part B: Later phases
+# Part B: Demo phases (local bank, Guard, PR bot)
 
-## Phase 5: GitHub App + workflows
-- **GitHub App "Hedwig":**
-  - Permissions: contents rw, pull requests rw, checks rw, issues rw (labels), actions rw (dispatch), metadata r.
-  - Events: `pull_request` and `push`.
-  - No server: workflows mint a token with `actions/create-github-app-token`, using the `HEDWIG_APP_ID` and `HEDWIG_APP_PRIVATE_KEY` secrets, so PRs, comments and merges show up as `hedwig[bot]`.
-- **Workflows:**
-  - `pr-guard`: comment plus a required check.
-  - `report`: on a merge that overrode a failed check, log it, email the PDF, then dispatch `respond`.
-  - `watch`: schedule, dispatch and replay input.
-  - `respond`: runs the Phase 3 orchestrator in the runner, then opens the PR from `pr.md`, adds labels and calls the auto-merge API when allowed.
-- Audit log on a `hedwig-state` branch.
+The Guard (`plan/guardPLAN.md`) is built in parallel by a teammate in `src/hedwig/guard/`, `deploy/` and `tests/guard/`. Nothing below edits those. Where Hedwig needs something from the Guard, it reads it through a configurable URL or file and tolerates missing fields.
 
-**Done when** (on a sandbox repo with the App installed):
-- A PR adding `lodash@4.17.15` gets a bot comment and a red check. An admin merge emails the PDF and starts a fix PR.
-- A replay dispatch opens a bot PR. With `auto_merge_if_verified` it merges after checks; otherwise it gets the `hedwig:needs-review` label.
+## Phase 5: Drop replay, rebuild `/dash`
+**Remove replay**, everything that exists only for it:
+- The `replay` command and `/replay`, the dashboard's replay key, `REPLAY_DIR` and `replay_names` in `advisories.py`, and `src/hedwig/data/replay/`. Docs: README, `fixtures/README.md`, this plan, `docs/bank-contract.md`.
+- One existing test used it (`tests/test_phase2.py`, the replay-then-compromise test). It is rewritten against `fixtures/advisories`, which already holds log4shell. No new tests.
+- `simulate-attack` stays. It is a cheap way to show evidence rising next to the Guard's real attack evidence.
 
-## Phase 6: Render executor
-- Deploy, suspend, resume and rollback through the Render API (**check the endpoints in current Render docs**).
-- After a merge: smoke test, then rollback if it fails and rollback is allowed.
-- `hedwig resume <service>`.
-- The takedown executor replaces the stub in `core/actions.py`.
+**`/dash`** gets an architecture strip and three tabs:
+- **Architecture strip, always visible:** one tile per service from `.hedwig.yml` with tier, **status** (`active` running, `down` stopped, `starting`, `unknown` when Docker is unavailable), top risk and fix state. The infrastructure the compose file also runs (Guard, Logstash, Elasticsearch, Kibana) is shown dimmed beside them: `[Guard] ──▶ [transaction] [account] [support] [notifications]`. Status comes from Phase 6's `deploy.status()`, refreshed every 3 s.
+- **Overview tab:** the alerts table and a detail pane built on a `Tree`. Reachability becomes a node `called in 3 places` with one child per file (`src/render.js ▸ 2 call sites`). Expanding a file shows each call site (function and line) with a few lines of code. Collapsed by default. `Enter` or `Space` toggles, `e` expands all, `c` collapses all. The score factors and the decision stay as short lines above the tree. This replaces today's dump of every affected file.
+- **Reports tab:** every report and run in one table (time, service, kind: PM report, fix run or forced merge, outcome, PDF path). PM reports come from the `notify_pm` entries of the audit log, runs from `.hedwig/runs`. `Enter` shows the summary.
+- **Attacks tab:** the Guard's attack reports. Source 1 is the attack evidence in each service's log (what `guard-sync` writes and `evidence.read_log` reads). Source 2, when `.hedwig.yml` has `guard: {url: ...}` and `HEDWIG_GUARD_TOKEN` is set, is the Guard's `GET /__hedwig/events`.
+- Keys: `f` fix, `t` take down (dry run first, then a real stop), `u` start a down service, `a` approve a run, `e`/`c` expand/collapse call sites, `1` `2` `3` switch tabs, `/` filter, `?` help.
 
 **Done when:**
-- respx-mocked unit tests pass.
-- On one throwaway Render service, a verify-fail suspends it, `resume` restores it and a forced smoke failure rolls it back.
-- Each action is audited.
+- No replay reference is left in `src` or the docs, and ruff and pytest are green.
+- In a real terminal, `/dash` shows the tiles, expanding a file reveals its call sites and collapsing hides them, and the Reports tab lists the earlier PM mails.
 
-## Phase 7: Claude Code plugin
-- An MCP server wrapping `hedwig … --json` with tools `scan`, `status`, `explain`, `propose_fix` (`fix --dry-run`) and `replay`.
-- `/hedwig:scan`, `/hedwig:status` and `/hedwig:fix`.
-- A skill and a `remediator` subagent.
-- A PostToolUse hook that warns on vulnerable manifest edits.
+## Phase 6: Local deploy executor (replaces the Render executor)
+`core/deploy.py` is a thin wrapper over the `docker compose` CLI:
+- **Compose file:** `compose:` in `.hedwig.yml`, else the first of `docker-compose.yml`, `compose.yaml`, `deploy/docker-compose.yml` under the root. A service maps to the compose service of the same name, or `compose_service:`.
+- `status` (active, starting, down or unknown), `stop`, `start`. **Done in Phase 5**, together with the policy's `takedown` calling `stop`, `actions.resume`, and the dashboard's `t` and `u` keys.
+- `rebuild`: `docker compose build <svc>`, then `docker compose up -d --no-deps <svc>`. Only that service restarts, so it is briefly down; the rest keep running.
+- `smoke`: the container is running and not restarting after 10 s; `healthy` if the compose file defines a healthcheck; and, if `gateway:` is set, `GET /<service><health_path>` through the Guard returns below 500.
+- **Commands:** `hedwig down <service>` and `hedwig up <service>` (also `/down` and `/up`). `down` is `docker compose stop <svc>`, which keeps the container and its network, so the Guard sees a dead upstream and `up` brings it back at once.
 
-**Done when:**
-- Each MCP tool returns valid JSON on a fixture.
-- `/hedwig:scan` works in a Claude Code session.
-- Editing a fixture `package.json` to `lodash@4.17.15` triggers the hook warning.
+Wiring:
+- The policy's `takedown` calls `deploy.stop` (done in Phase 5). The record in `.hedwig/state.json` stays as the fallback when no compose file is found.
+- After a verified fix is merged into local `main`, a service with a compose file is rebuilt and smoke-tested. If smoke fails and `rollback` is allowed, the merge is reverted with `git revert`, the service is rebuilt again, and the run records "rolled back". Every step is audited and appears in the run's steps.
+- Merging into local `main` is enough as the deployment: the fix PR is still published for the record, and local `main` ends up ahead of `origin/main`, which is harmless.
 
-## Phase 8: Demo bank, built to the Bank Contract
+**Done when** (against a throwaway compose file with one fixture service):
+- `hedwig down` stops it and the `/dash` tile turns down within 3 s, and `hedwig up` restores it.
+- A verified fix with `auto_merge_if_verified` merges, rebuilds, passes smoke, and the tile stays active.
+- A deliberately broken fix triggers the rollback.
 
-**Per service.** Each service is **one folder directly under `bank/`**: transaction/Java, account/Rust, support/PHP and notifications/Node, plus an optional Python service.
-1. A pinned manifest and lockfile with the seeded version:
-   - log4j-core 2.14.1
-   - regex 1.5.4
-   - a phpmailer pre-fix release
-   - lodash 4.17.15 + jsonwebtoken 8.5.1
+## Phase 7: PR bot and forced-merge response (replaces the GitHub App phase)
+No GitHub App and no self-hosted runner. The workflow uses `GITHUB_TOKEN`, and the laptop uses its logged-in `gh` CLI.
+- **`hedwig pr-check [--base REF] [--fail-on high] [--comment-file F]`:** scans the PR head and the base (in a temporary `git worktree`), keeps only the findings the PR **introduces**, writes a markdown comment (package, advisory, severity, risk, reachability, suggested fix), and exits non-zero at or above `--fail-on`.
+- **`.github/workflows/hedwig-pr.yml`:** runs on `pull_request` when the bank folder changes (the path is configurable). It installs Hedwig from the latest release the way `install.sh` does, runs `pr-check`, posts or updates one comment, and fails a job named `hedwig`. That is the bot's red check. A comment from `github-actions[bot]` is the simple bot.
+- **`hedwig watch [--repo owner/name] [--interval 20] [--once]`:** polls `gh pr list --state merged`. A PR merged while its `hedwig` check was **failing** is a forced merge. For it, Hedwig:
+  1. pulls `main` fast-forward;
+  2. scans and picks the findings the PR introduced;
+  3. **emails the PM** the PDF report, with a forced-merge section (PR link, who merged, the findings);
+  4. runs `run_fix` per affected service, so the policy gate decides what happens;
+  5. pushes the fix branch and opens a PR with `gh pr create` from `pr.md`;
+  6. if `auto_merge_if_verified` is allowed, merges into local `main` and rebuilds through Phase 6.
+- State (the PRs already handled) lives in `.hedwig/watch.json`. Events go to the audit log and show in the Reports tab.
+- The agents fix, test and write. The decision stays the deterministic policy gate.
 
-   Each version is checked on osv.dev.
-2. The vulnerable package is imported **and called** in source. User input never reaches the vulnerable path (for example, log4j logs only constants and runs with `-Dlog4j2.formatMsgNoLookups=true`). The data is fake.
-3. `GET /health` returns `200 {"status":"ok"}`.
-4. The `test_cmd` that `init` guesses passes offline in under 60s on the seeded version.
-5. A `Dockerfile` and `hedwig.requests.json` with ≥3 requests. Old-vs-old replay shows zero diffs.
-6. Access logs are written to `<svc>/logs/access.log`.
+**Done when** (on a sandbox PR that adds a vulnerable dependency):
+- The bot comments and the check is red.
+- Merging it anyway makes `hedwig watch` email the PM within one interval and open a fix PR.
+- With `auto_merge_if_verified` the service is rebuilt and its tile stays active. Without it the PR is left with the `hedwig:needs-review` label.
 
-**Estate:**
-
-7. `cd bank && hedwig init` detects exactly the 4 or 5 services with correct languages. After editing tier/allow:
-   - transaction: critical, `[open_fix_pr, auto_merge_if_verified, rollback]`
-   - account: high, `[open_fix_pr]`
-   - support: medium, `[open_fix_pr]`
-   - notifications: low, `[open_fix_pr, auto_merge_if_verified, takedown]`
-8. `docker compose up` starts all services, the gateway and the tablet page. `make demo-reset` restores the seeded state.
-9. The tablet page has a tile per service. Only the failing service's tile greys out.
-10. Each service is deployed on Render as a Docker web service, always-on, with a health check path.
-
-**Expected Hedwig outcomes:** a pytest e2e file plus a live run.
+## Phase 8: Bank integration and the rest
+- **The bank is built by the teammate.** Hedwig adapts to it through `.hedwig.yml` (`compose:`, `gateway:`, `port:`, `compose_service:`). `docs/bank-contract.md` is updated for the local setup: runs with `docker compose up`, service names equal folder names, each service has a healthcheck, and the Guard is the only entry point.
+- **Expected outcomes** (a live run, no Render):
 
 | Check | Expected |
 |---|---|
 | `hedwig scan bank/ --json` | All seeded CVEs found, each with reasoning |
-| `replay log4shell` → respond | Transaction fix verified, auto-merged, deployed, smoke OK, no downtime |
-| account finding | Bot PR, `hedwig:needs-review`, not merged |
-| PR adding vulnerable phpmailer to support | Red check. Admin merge → PDF emailed to PM → fix PR |
-| `simulate-attack notifications --compromise` + `replay jsonwebtoken` | Evidence 4 → notifications suspended, only the offers tile greys out |
-| `hedwig dash` | transaction patched, notifications asleep, account/support awaiting human |
+| Guard blocks the 500-password attack | Blocked at the Guard, attack report to the PM, visible in the Attacks tab |
+| PR adding a vulnerable dependency | Bot comment and red check |
+| That PR merged over the red check | PM email with the PDF, a fix PR, local `main` updated, service rebuilt, tile active |
+| A service with `takedown` allowed and signs of compromise (`simulate-attack --compromise`) | `docker compose stop`, only that tile goes down, `hedwig up` restores it |
+| `hedwig dash` | Architecture with live status, reports table, attacks, expandable call sites |
+
+- **Claude Code plugin** (optional, last): an MCP server wrapping `hedwig ... --json` with `scan`, `status`, `explain` and `propose_fix`, the `/hedwig:*` commands, a skill and a hook that warns on vulnerable manifest edits.
+- **Not built:** Render deployment, the GitHub App, a self-hosted runner. The web dashboard is the teammate's, later.
 
 ---
 
@@ -338,4 +339,4 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - Every phase: `uv run ruff check && uv run pytest` green in CI. Unit tests use offline fixtures and mocked Groq calls.
 - One live-Groq smoke test (`hedwig fix node-lodash`) per change to agent prompts.
 - Part A milestone: the end-to-end terminal run above on both Linux and Windows.
-- Phase 8: the expected-outcomes table, run once on Render and once on local docker-compose as the demo-day fallback.
+- Phase 8: the expected-outcomes table, run live on the local Docker Compose bank behind the Guard.

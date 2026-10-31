@@ -166,10 +166,6 @@ def _explain(session: Session, args: list[str]) -> None:
     scan_cmd.run_in_app("explain", args, session.root)
 
 
-def _replay(session: Session, args: list[str]) -> None:
-    scan_cmd.run_in_app("replay", args, session.root)
-
-
 def _simulate_attack(session: Session, args: list[str]) -> None:
     scan_cmd.run_in_app("simulate-attack", args, session.root)
 
@@ -207,7 +203,6 @@ COMMANDS: dict[str, tuple[str, Handler]] = {
     "/scan": ("Find vulnerabilities (this folder, a path or a git URL)", _scan),
     "/status": ("Findings per service in this folder", _status),
     "/explain": ("Explain one finding: /explain <CVE or advisory id>", _explain),
-    "/replay": ("Inject a known advisory: /replay log4shell", _replay),
     "/simulate-attack": ("Write an attack to a service log", _simulate_attack),
     "/fix": ("Fix a service's vulnerable packages: /fix <service>", _fix),
     "/report": ("PDF report for the PM: /report <service|run-id> [--email]", _report),

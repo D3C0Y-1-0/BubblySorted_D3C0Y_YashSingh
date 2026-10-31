@@ -1,20 +1,31 @@
-"""The terminal dashboard: services, alerts, fix runs and their timing, all in one screen."""
+"""The terminal dashboard: the architecture with live status, alerts, reports and attacks."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from rich.markup import escape
+from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Input, OptionList, ProgressBar, Static
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Input,
+    ProgressBar,
+    Static,
+    TabbedContent,
+    TabPane,
+    Tree,
+)
 
 from hedwig import settings
-from hedwig.core import actions, engine, runner, runs
-from hedwig.core.advisories import REPLAY_DIR, AdvisorySource, replay_names
+from hedwig.core import actions, audit, deploy, engine, evidence, guard_feed, runner, runs
+from hedwig.core.advisories import AdvisorySource
 from hedwig.core.agents import orchestrator
-from hedwig.core.models import Finding, Run, ScanResult
+from hedwig.core.models import CallSite, Finding, Run, ScanResult
 from hedwig.core.report import duration
 
 SEVERITY_STYLE = {"critical": "bold red", "high": "dark_orange", "medium": "yellow", "low": "dim"}
@@ -23,11 +34,35 @@ OWL = {
     "alert": ("red", '  ,___,\n  (O,O)\n  /)_)\n   " "'),
     "asleep": ("grey50", '  ,___,\n  (-,-)\n  /)_)\n   " "'),
 }
+STATUS_LOOK = {
+    "active": ("green", "●"),
+    "starting": ("yellow", "◐"),
+    "down": ("grey50", "○"),
+    "unknown": ("grey50", "?"),
+}
+# Textual styles do not know Rich's colour names such as grey50
+BORDER = {
+    "green": "#3fb950", "red": "#f85149", "dark_orange": "#ff8c00",
+    "yellow": "#e3b341", "grey50": "#7f7f7f",
+}  # fmt: skip
+TABS = {"1": "overview", "2": "reports-tab", "3": "attacks-tab"}
 HELP = (
-    "Enter detail   f fix   t takedown (dry run first)   a approve a run   "
-    "r replay an advisory   / filter   q quit"
+    "f fix   t take down (dry run first)   u start a down service   a approve a run   "
+    "e/c expand/collapse call sites   1 2 3 tabs   / filter   q quit"
 )
 GAUGE_FULL = 0.5  # a finding at this risk fills the gauge
+SNIPPET_CONTEXT = 3
+POLL_SECONDS = 3
+
+
+@dataclass
+class ReportRow:
+    key: str
+    time: str
+    service: str
+    kind: str
+    outcome: str
+    detail: str
 
 
 class Confirm(ModalScreen[bool]):
@@ -53,40 +88,37 @@ class Confirm(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class PickAdvisory(ModalScreen[str | None]):
-    BINDINGS = [("escape", "cancel", "Cancel")]
-    DEFAULT_CSS = """
-    PickAdvisory { align: center middle; }
-    PickAdvisory > OptionList { width: 40; height: auto; border: round #b9800f; }
-    """
-
-    def compose(self) -> ComposeResult:
-        yield OptionList(*replay_names())
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(str(event.option.prompt))
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
 class DashApp(App):
     TITLE = "Hedwig"
     CSS = """
     #owl { height: 6; padding: 0 2; }
     #cards { height: 5; }
-    .card { width: 1fr; border: round #4a3f35; padding: 0 1; }
-    #middle { height: 1fr; }
+    .card {
+        width: 1fr; border: round #4a3f35; padding: 0 1;
+        text-wrap: nowrap; text-overflow: ellipsis;
+    }
+    .arrow { width: auto; padding: 1 1; color: #b9800f; }
+    #infra { height: 1; padding: 0 2; color: #7f7f7f; }
+    #tabs { height: 1fr; }
     #alerts { width: 3fr; }
-    #detail { width: 2fr; border: round #4a3f35; padding: 0 1; overflow-y: auto; }
-    #timeline { height: 9; }
+    #right { width: 2fr; }
+    #detail { height: auto; max-height: 12; padding: 0 1; }
+    #reach { height: 1fr; border: round #4a3f35; }
+    #reports { height: 2fr; }
+    #report-detail { height: 1fr; border: round #4a3f35; padding: 0 1; overflow-y: auto; }
+    #attack-note { height: auto; padding: 0 1; color: #7f7f7f; }
     #filter { display: none; }
     """
     BINDINGS = [
         ("f", "fix", "Fix"),
-        ("t", "takedown", "Takedown"),
+        ("t", "takedown", "Take down"),
+        ("u", "start", "Start"),
         ("a", "approve", "Approve"),
-        ("r", "replay", "Replay"),
+        ("e", "expand", "Expand"),
+        ("c", "collapse", "Collapse"),
+        ("1", "tab('1')", "Overview"),
+        ("2", "tab('2')", "Reports"),
+        ("3", "tab('3')", "Attacks"),
         ("/", "filter", "Filter"),
         ("question_mark", "help", "Help"),
         ("q", "quit", "Quit"),
@@ -95,37 +127,57 @@ class DashApp(App):
     def __init__(self, root: Path, source: AdvisorySource, tier: str = "medium") -> None:
         super().__init__()
         self.root, self.source, self.tier = root, source, tier
+        self.specs = {s.name: s for s in engine.resolve_services(root, tier)}
         self.result: ScanResult | None = None
-        self.replayed: list[Finding] = []
         self.shown: dict[str, Finding] = {}
         self.needle = ""
         self.fixing: set[str] = set()
+        self.status: dict[str, str] = {}
+        self.infra: dict[str, str] = {}
+        self.attack_rows: list[tuple] = []
+        self.report_rows: dict[str, ReportRow] = {}
+        self._report_sig: list = []
 
     # ── layout ────────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
         with Horizontal(id="owl"):
-            yield Static(id="owl-art", classes="owl")
+            yield Static(id="owl-art")
             with Vertical():
                 yield Static(id="status")
                 yield ProgressBar(total=100, show_eta=False, id="gauge")
                 yield Static(id="clock")
         yield Horizontal(id="cards")
-        with Horizontal(id="middle"):
-            yield DataTable(id="alerts", cursor_type="row")
-            yield Static("Select an alert.", id="detail")
-        yield DataTable(id="timeline", cursor_type="row")
+        yield Static(id="infra")
+        with TabbedContent(initial="overview", id="tabs"):
+            with TabPane("Overview", id="overview"), Horizontal():
+                yield DataTable(id="alerts", cursor_type="row")
+                with Vertical(id="right"):
+                    yield Static("Select an alert.", id="detail")
+                    yield Tree("reachability", id="reach")
+            with TabPane("Reports", id="reports-tab"), Vertical():
+                yield DataTable(id="reports", cursor_type="row")
+                yield Static("Select a report.", id="report-detail")
+            with TabPane("Attacks", id="attacks-tab"), Vertical():
+                yield Static(id="attack-note")
+                yield DataTable(id="attacks", cursor_type="row")
         yield Input(placeholder="filter alerts", id="filter")
         yield Footer()
 
     def on_mount(self) -> None:
-        alerts = self.query_one("#alerts", DataTable)
-        alerts.add_columns("severity", "risk", "service", "package", "advisory", "ev", "decision")
-        timeline = self.query_one("#timeline", DataTable)
-        timeline.add_columns("run", "service", "package", "fix", "step", "state", "outcome", "time")
+        self.query_one("#alerts", DataTable).add_columns(
+            "severity", "risk", "service", "package", "advisory", "ev", "decision"
+        )
+        self.query_one("#reports", DataTable).add_columns("time", "service", "kind", "outcome")
+        self.query_one("#attacks", DataTable).add_columns(
+            "time", "source", "category", "action", "detail"
+        )
+        self.query_one("#reach", Tree).show_root = True
         self.load_scan()
+        self.poll()
         self.set_interval(1.0, self.tick)
+        self.set_interval(POLL_SECONDS, self.poll)
 
-    # ── data ──────────────────────────────────────────────────────────────────
+    # ── background data ───────────────────────────────────────────────────────
     @work(thread=True)
     def load_scan(self) -> None:
         try:
@@ -135,20 +187,66 @@ class DashApp(App):
             return
         self.call_from_thread(self.set_result, result)
 
+    @work(thread=True, exclusive=True, group="poll")
+    def poll(self) -> None:
+        """Docker status, the Guard's events and the service logs. Slow, so off the UI thread."""
+        names = list(self.specs)
+        compose = deploy.compose_status(self.root)
+        status = (
+            {n: compose.get(deploy.compose_name(self.root, n), "unknown") for n in names}
+            if compose is not None
+            else {n: "unknown" for n in names}
+        )
+        wanted = {deploy.compose_name(self.root, n) for n in names}
+        infra = {k: v for k, v in (compose or {}).items() if k not in wanted}
+        events, note = guard_feed.fetch(self.root)
+        rows: list[tuple] = [
+            (e.time[:19] or "-", e.source or "-", e.category or "-", e.action or "-", e.detail)
+            for e in events
+        ]
+        for name, spec in self.specs.items():
+            log = evidence.read_log(spec.log_path)
+            for rule in evidence.RULES:
+                if rule.id in log.attacks:
+                    rows.append(
+                        ("-", f"{name} log", rule.label, "seen", f"x{log.attacks[rule.id]}")
+                    )
+            if log.compromise:
+                rows.append(("-", f"{name} log", "compromise marker", "seen", ""))
+        self.call_from_thread(self.apply_poll, status, infra, rows, note)
+
+    def apply_poll(self, status: dict, infra: dict, rows: list, note: str) -> None:
+        self.status, self.infra = status, infra
+        if rows != self.attack_rows:
+            self.attack_rows = rows
+            table = self.query_one("#attacks", DataTable)
+            table.clear()
+            for row in rows:
+                table.add_row(*row)
+        self.query_one("#attack-note", Static).update(
+            note or f"{len(rows)} attack report(s) from the Guard and the service logs"
+        )
+        self.refresh_cards()
+        self.refresh_header()
+
     def set_result(self, result: ScanResult) -> None:
         self.result = result
         self.refresh_alerts()
         self.refresh_cards()
 
     def findings(self) -> list[Finding]:
-        real = self.result.findings if self.result else []
-        taken = {(f.service, f.id, f.package) for f in real}
-        extra = [f for f in self.replayed if (f.service, f.id, f.package) not in taken]
-        return sorted([*real, *extra], key=lambda f: -f.risk)
+        return list(self.result.findings) if self.result else []
 
+    def effective_status(self, name: str) -> str:
+        known = self.status.get(name, "unknown")
+        if known != "unknown":
+            return known
+        return "down" if actions.is_down(self.root, name) else "unknown"
+
+    # ── periodic ──────────────────────────────────────────────────────────────
     def tick(self) -> None:
         self.query_one("#clock", Static).update(self.freshness())
-        self.refresh_timeline()
+        self.refresh_reports()
         self.refresh_cards()
         self.refresh_header()
 
@@ -161,16 +259,14 @@ class DashApp(App):
         feed = "advisory data: offline" if self.result.offline else "advisory feed: live"
         return f"{now}   {feed}   last scan {minutes} min ago"
 
-    # ── rendering ─────────────────────────────────────────────────────────────
     def state(self) -> str:
-        down = actions.load_state(self.root).get("down", {})
-        found = self.findings()
-        if down:
+        if any(self.effective_status(n) == "down" for n in self.specs):
             return "asleep"
-        if any(f.severity == "critical" or f.evidence_level >= 3 for f in found):
+        if any(f.severity == "critical" or f.evidence_level >= 3 for f in self.findings()):
             return "alert"
         return "watching"
 
+    # ── header and architecture ───────────────────────────────────────────────
     def refresh_header(self) -> None:
         state = self.state()
         colour, art = OWL[state]
@@ -184,50 +280,50 @@ class DashApp(App):
 
     def refresh_cards(self) -> None:
         cards = self.query_one("#cards", Horizontal)
-        if not self.result:
-            return
-        down = actions.load_state(self.root).get("down", {})
         latest = {r.service: r for r in reversed(runs.load_all(self.root))}
-        text = []
-        for service in self.result.services:
-            found = [f for f in self.findings() if f.service == service.name]
-            top = max((f.risk for f in found), default=0.0)
-            colour = (
-                "red"
-                if top >= 0.4
-                else "dark_orange"
-                if top >= 0.25
-                else "yellow"
-                if top >= 0.12
-                else "green"
-            )
-            run = latest.get(service.name)
-            if service.name in down:
-                health = "[grey50]down[/grey50]"
+        guarded = any("guard" in name for name in self.infra)
+        tiles = []
+        for name, spec in self.specs.items():
+            top = max((f.risk for f in self.findings() if f.service == name), default=0.0)
+            risk_colour = (
+                "red" if top >= 0.4 else "dark_orange" if top >= 0.25
+                else "yellow" if top >= 0.12 else "green"
+            )  # fmt: skip
+            status = self.effective_status(name)
+            colour, dot = STATUS_LOOK[status]
+            run = latest.get(name)
+            note = ""
+            if name in self.fixing:
+                note = " · [cyan]fixing[/cyan]"
             elif run and run.action == "review_pr":
-                health = "[yellow]awaiting human[/yellow]"
-            elif service.name in self.fixing:
-                health = "[cyan]fixing[/cyan]"
-            else:
-                health = "[green]ok[/green]"
-            text.append(
-                (
-                    service.name,
-                    f"{service.name}\n{service.tier} · {health}\n"
-                    f"[{colour}]risk {top:.2f}[/{colour}]",
-                    colour,
-                )
+                note = " · [yellow]awaiting human[/yellow]"
+            body = (
+                f"{name}\n{spec.tier} · [{colour}]{dot} {status}[/{colour}]{note}\n"
+                f"[{risk_colour}]risk {top:.2f}[/{risk_colour}]"
             )
-        existing = list(cards.children)
-        if len(existing) != len(text):
-            for child in existing:
+            tiles.append((body, colour if status != "active" else risk_colour))
+        existing = [c for c in cards.children if "card" in c.classes]
+        if len(existing) != len(tiles) or bool(cards.query(".arrow")) != guarded:
+            for child in list(cards.children):
                 child.remove()
-            cards.mount(*[Static(body, classes="card") for _, body, _ in text])
-            existing = list(cards.children)
-        for widget, (_, body, colour) in zip(existing, text, strict=False):
+            if guarded:
+                cards.mount(Static("Guard\n──▶", classes="arrow"))
+            cards.mount(*[Static(body, classes="card") for body, _ in tiles])
+            existing = []
+        for widget, (body, colour) in zip(existing, tiles, strict=False):
             widget.update(body)
-            widget.styles.border = ("round", colour)
+            widget.styles.border = ("round", BORDER.get(colour, colour))
+        infra = self.query_one("#infra", Static)
+        if self.infra:
+            parts = []
+            for name, state in sorted(self.infra.items()):
+                colour, dot = STATUS_LOOK[state]
+                parts.append(f"[{colour}]{dot}[/{colour}] {escape(name)}")
+            infra.update("infrastructure: " + "   ".join(parts))
+        else:
+            infra.update("")
 
+    # ── alerts and the reachability tree ──────────────────────────────────────
     def refresh_alerts(self) -> None:
         table = self.query_one("#alerts", DataTable)
         table.clear()
@@ -239,42 +335,20 @@ class DashApp(App):
             key = f"{f.service}|{f.id}|{f.package}"
             self.shown[key] = f
             style = SEVERITY_STYLE[f.severity]
-            tag = " [cyan](replay)[/cyan]" if f in self.replayed else ""
             table.add_row(
                 f"[{style}]{f.severity}[/{style}]",
                 f"{f.risk:.2f}",
                 f.service,
                 f"{f.package}@{f.version}",
-                f"{f.id}{tag}",
+                f.id,
                 str(f.evidence_level),
                 f.decision.action,
                 key=key,
             )
         self.refresh_header()
 
-    def refresh_timeline(self) -> None:
-        table = self.query_one("#timeline", DataTable)
-        rows = runs.load_all(self.root)
-        selected = self.selected_run_id()
-        table.clear()
-        for r in rows[:30]:
-            step = r.steps[-1] if r.steps else None
-            table.add_row(
-                r.run_id[-12:],
-                r.service,
-                r.package,
-                f"{r.from_version} → {r.to_version or '-'}",
-                f"{step.name} {step.status}" if step else "-",
-                r.state,
-                r.action or "-",
-                duration(r),
-                key=r.run_id,
-            )
-        if selected and selected in {r.run_id for r in rows[:30]}:
-            table.move_cursor(row=table.get_row_index(selected))
-
-    def selected_run_id(self) -> str | None:
-        table = self.query_one("#timeline", DataTable)
+    @staticmethod
+    def _selected_key(table: DataTable) -> str | None:
         if not table.row_count:
             return None
         try:
@@ -283,45 +357,154 @@ class DashApp(App):
             return None
 
     def selected_finding(self) -> Finding | None:
-        table = self.query_one("#alerts", DataTable)
-        if not table.row_count:
-            return None
-        try:
-            return self.shown.get(
-                table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
-            )
-        except Exception:
-            return None
+        key = self._selected_key(self.query_one("#alerts", DataTable))
+        return self.shown.get(key) if key else None
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        if event.data_table.id != "alerts":
-            return
-        self.show_detail(self.shown.get(event.row_key.value))
+        if event.data_table.id == "alerts":
+            self.show_detail(self.shown.get(event.row_key.value))
+        elif event.data_table.id == "reports":
+            row = self.report_rows.get(event.row_key.value)
+            self.query_one("#report-detail", Static).update(
+                escape(row.detail) if row else "Select a report."
+            )
 
     def show_detail(self, f: Finding | None) -> None:
         pane = self.query_one("#detail", Static)
         if f is None:
             pane.update("Select an alert.")
+            self.build_tree(None)
             return
         x = f.factors
-        lines = [
-            f"[b]{escape(f.id)}[/b]  {f.severity}  risk {f.risk:.2f}",
-            f"{escape(f.package)}@{escape(f.version)} in [b]{escape(f.service)}[/b] ({f.tier})",
-            escape(f.summary),
-            "",
-            f"[b]Why[/b] {escape(f.reasoning)}",
-            f"exploitability {x.exploitability:.2f}  impact {x.impact:.2f}  "
-            f"criticality {x.criticality:.2f}  confidence {x.confidence:.2f}",
-            f"reachability: {f.reachability}",
-            *[f"  {escape(s.symbol)} at {escape(s.file)}:{s.line}" for s in f.call_sites[:3]],
-            f"fixed version: {f.package_fix or 'none'}" + (" (major)" if f.needs_major else ""),
-            f"[b]Decision[/b] {f.decision.action}: {escape(f.decision.reason)}",
-        ]
-        pane.update("\n".join(lines))
+        pane.update(
+            "\n".join(
+                [
+                    f"[b]{escape(f.id)}[/b]  {f.severity}  risk {f.risk:.2f}",
+                    f"{escape(f.package)}@{escape(f.version)} in "
+                    f"[b]{escape(f.service)}[/b] ({f.tier})",
+                    escape(f.summary),
+                    f"[b]Why[/b] {escape(f.reasoning)}",
+                    f"exploitability {x.exploitability:.2f}  impact {x.impact:.2f}  "
+                    f"criticality {x.criticality:.2f}  confidence {x.confidence:.2f}",
+                    f"fixed version: {f.package_fix or 'none'}"
+                    + (" (major)" if f.needs_major else ""),
+                    f"[b]Decision[/b] {f.decision.action}: {escape(f.decision.reason)}",
+                ]
+            )
+        )
+        self.build_tree(f)
+
+    def snippet(self, service: str, site: CallSite) -> list[Text]:
+        spec = self.specs.get(service)
+        try:
+            lines = (spec.folder / site.file).read_text(encoding="utf-8").splitlines()
+        except (AttributeError, OSError, UnicodeDecodeError):
+            return [Text("(source not readable)", style="dim")]
+        low = max(1, site.line - SNIPPET_CONTEXT)
+        high = min(len(lines), site.line + SNIPPET_CONTEXT)
+        out = []
+        for number in range(low, high + 1):
+            hit = number == site.line
+            out.append(
+                Text(
+                    f"{'▶' if hit else ' '} {number:>4} │ {lines[number - 1]}",
+                    style="bold #f5bd2a" if hit else "dim",
+                )
+            )
+        return out
+
+    def build_tree(self, f: Finding | None) -> None:
+        """Reachability as a tree: files collapsed, each expanding to its call sites and code."""
+        tree = self.query_one("#reach", Tree)
+        tree.clear()
+        if f is None:
+            tree.root.set_label("reachability")
+            return
+        by_file: dict[str, list[CallSite]] = {}
+        for site in f.call_sites:
+            by_file.setdefault(site.file, []).append(site)
+        label = f"reachability: {f.reachability}"
+        if f.call_sites:
+            label += f" · {len(f.call_sites)} call site(s) in {len(by_file)} file(s)"
+        tree.root.set_label(label)
+        for file, sites in by_file.items():
+            node = tree.root.add(f"{file} ({len(sites)} call site(s))", expand=False)
+            for site in sites:
+                where = Text(f"{site.function}() line {site.line}: {site.symbol}")
+                child = node.add(where, expand=True)
+                for line in self.snippet(f.service, site):
+                    child.add_leaf(line)
+        tree.root.expand()
+
+    def action_expand(self) -> None:
+        self.query_one("#reach", Tree).root.expand_all()
+
+    def action_collapse(self) -> None:
+        tree = self.query_one("#reach", Tree)
+        tree.root.collapse_all()
+        tree.root.expand()
+
+    # ── reports ───────────────────────────────────────────────────────────────
+    def collect_reports(self) -> list[ReportRow]:
+        rows: list[ReportRow] = []
+        for run in runs.load_all(self.root):
+            step = run.steps[-1] if run.steps else None
+            outcome = (
+                f"running: {step.name} {step.status}" if run.state == "running" and step
+                else f"{run.state}, {run.action or '-'}"
+            )  # fmt: skip
+            summary = runs.run_dir(self.root, run.run_id) / "summary.txt"
+            text = summary.read_text(encoding="utf-8") if summary.is_file() else ""
+            steps = "\n".join(f"{s.name}: {s.status} {s.detail}" for s in run.steps)
+            rows.append(
+                ReportRow(
+                    f"run:{run.run_id}",
+                    run.started_at,
+                    run.service,
+                    "fix run",
+                    f"{outcome} ({duration(run)})",
+                    f"{run.package} {run.from_version} to {run.to_version or '-'}\n"
+                    f"{text}\n\n{steps}",
+                )
+            )
+        for number, entry in enumerate(audit.read(self.root)):
+            if entry.get("kind") != "action" or entry.get("action") not in ("notify_pm", "report"):
+                continue
+            ok = entry.get("ok", True)
+            rows.append(
+                ReportRow(
+                    f"audit:{number}",
+                    entry["at"],
+                    entry.get("service", ""),
+                    "PM report" if entry["action"] == "notify_pm" else "PDF report",
+                    ("sent" if ok else "NOT sent") + f": {entry.get('message', '')[:60]}",
+                    f"{entry.get('message', '')}\nPDF: {entry.get('pdf') or '-'}\n"
+                    f"Reason: {entry.get('reason', '-')}",
+                )
+            )
+        return sorted(rows, key=lambda r: r.time, reverse=True)
+
+    def refresh_reports(self) -> None:
+        rows = self.collect_reports()
+        signature = [(r.key, r.outcome) for r in rows]
+        if signature == self._report_sig:
+            return
+        self._report_sig = signature
+        self.report_rows = {r.key: r for r in rows}
+        table = self.query_one("#reports", DataTable)
+        selected = self._selected_key(table)
+        table.clear()
+        for r in rows:
+            table.add_row(r.time[:19].replace("T", " "), r.service, r.kind, r.outcome, key=r.key)
+        if selected in self.report_rows:
+            table.move_cursor(row=table.get_row_index(selected))
 
     # ── actions ───────────────────────────────────────────────────────────────
     def action_help(self) -> None:
         self.notify(HELP, title="Keys", timeout=10)
+
+    def action_tab(self, number: str) -> None:
+        self.query_one(TabbedContent).active = TABS[number]
 
     def action_filter(self) -> None:
         box = self.query_one("#filter", Input)
@@ -345,18 +528,15 @@ class DashApp(App):
         if not settings.get("groq_api_key") and finding.decision.action == "fix":
             self.notify("groq_api_key is not set (hedwig config)", severity="error")
             return
+        spec = self.specs.get(finding.service)
+        if spec is None:
+            self.notify(f"no service {finding.service} here", severity="error")
+            return
         group = [
             f
             for f in self.findings()
             if f.service == finding.service and f.package == finding.package
         ]
-        spec = next(
-            (s for s in engine.resolve_services(self.root, self.tier) if s.name == finding.service),
-            None,
-        )
-        if spec is None:
-            self.notify(f"no service {finding.service} here", severity="error")
-            return
         self.fixing.add(key)
         self.notify(f"fixing {finding.package} in {finding.service}")
         self.run_fix(key, group, spec)
@@ -377,24 +557,49 @@ class DashApp(App):
         finding = self.selected_finding()
         if not finding:
             return
-        text = (
-            f"[b]Dry run[/b]: take down [b]{escape(finding.service)}[/b]?\n\n"
-            "Hedwig would mark the service as down and email the PM. The real shutdown arrives "
-            "with the deployment executor, so for now it is only recorded."
+        service = finding.service
+        real = deploy.compose_file(self.root) is not None
+        what = (
+            f"run [b]docker compose stop {escape(deploy.compose_name(self.root, service))}[/b]"
+            if real
+            else "only record the service as down (no compose file found)"
         )
+        text = f"[b]Dry run[/b]: take down [b]{escape(service)}[/b]?\n\nHedwig would {what}."
 
         def done(confirmed: bool | None) -> None:
             if confirmed:
-                actions.takedown(self.root, finding.service, "taken down from the dashboard")
-                self.notify(f"{finding.service} taken down (recorded)")
+                self.do_takedown(service)
 
         self.push_screen(Confirm(text), done)
 
+    @work(thread=True)
+    def do_takedown(self, service: str) -> None:
+        note = actions.takedown(self.root, service, "taken down from the dashboard")
+        self.call_from_thread(self.notify, f"{service} taken down ({note})")
+        self.call_from_thread(self.poll)
+
+    def action_start(self) -> None:
+        finding = self.selected_finding()
+        if not finding:
+            return
+        if self.effective_status(finding.service) not in ("down", "unknown"):
+            self.notify(f"{finding.service} is already running")
+            return
+        self.do_start(finding.service)
+
+    @work(thread=True)
+    def do_start(self, service: str) -> None:
+        note = actions.resume(self.root, service)
+        self.call_from_thread(self.notify, f"{service}: {note}")
+        self.call_from_thread(self.poll)
+
     def action_approve(self) -> None:
-        run_id = self.selected_run_id()
-        run: Run | None = runs.load(self.root, run_id) if run_id else None
+        key = self._selected_key(self.query_one("#reports", DataTable)) or ""
+        run: Run | None = (
+            runs.load(self.root, key.removeprefix("run:")) if key.startswith("run:") else None
+        )
         if not run or run.state != "verified" or run.action != "review_pr":
-            self.notify("select a verified run that is waiting for review (timeline)")
+            self.notify("select a verified fix run waiting for review (Reports tab)")
             return
         text = f"Merge branch [b]{escape(run.branch)}[/b] into the current branch?"
 
@@ -413,22 +618,3 @@ class DashApp(App):
             self.notify(f"merged {run.branch}")
 
         self.push_screen(Confirm(text), done)
-
-    def action_replay(self) -> None:
-        def chosen(name: str | None) -> None:
-            if name:
-                self.add_replay(name)
-
-        self.push_screen(PickAdvisory(), chosen)
-
-    @work(thread=True)
-    def add_replay(self, name: str) -> None:
-        source = AdvisorySource(offline=True, directory=REPLAY_DIR, only={name})
-        try:
-            result = engine.scan(self.root, source, self.tier, save=False)
-        except Exception as err:
-            self.call_from_thread(self.notify, f"replay failed: {err}", severity="error")
-            return
-        self.replayed = [f for f in self.replayed if name not in f.ids] + result.findings
-        self.call_from_thread(self.refresh_alerts)
-        self.call_from_thread(self.notify, f"replayed {name}: {len(result.findings)} finding(s)")

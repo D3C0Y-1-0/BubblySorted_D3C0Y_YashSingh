@@ -121,8 +121,8 @@ def run_fix(
     # Policy comes first: some findings never enter the fixing pipeline.
     if decision.action == "takedown":
         step = pipe.begin("act", decision.reason)
-        actions.takedown(root, spec.name, decision.reason)
-        pipe.end(step, "ok", "service taken down (pending executor)")
+        note = actions.takedown(root, spec.name, decision.reason)
+        pipe.end(step, "ok", f"service taken down ({note})")
         return _finish(root, run, "skipped", "takedown")
     if decision.action == "notify":
         step = pipe.begin("act", decision.reason)
@@ -401,9 +401,9 @@ def _act(
         pipe.end(step, "ok", "fix verified; left for human review")
         return _finish(root, run, "verified", "review_pr")
     if decision.on_failed == "takedown":
-        actions.takedown(root, run.service, f"fix failed at {run.failed_step}")
+        note = actions.takedown(root, run.service, f"fix failed at {run.failed_step}")
         actions.save_pr(root, run, title, text.pr_body, "draft")
-        pipe.end(step, "ok", "verification failed; service taken down (pending executor)")
+        pipe.end(step, "ok", f"verification failed; service taken down ({note})")
         return _finish(root, run, "failed", "takedown")
     actions.save_pr(root, run, title, text.pr_body, "hedwig:verification-failed")
     pipe.end(step, "ok", "verification failed; PR left for a human")

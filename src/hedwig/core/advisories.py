@@ -29,12 +29,6 @@ EPSS_URL = "https://api.first.org/data/v1/epss"
 DAY = 24 * 3600
 VULN_TTL = 7 * DAY
 DEFAULT_CACHE = settings.CONFIG_DIR / "cache"
-# advisories bundled for `hedwig replay`: same layout as the cache
-REPLAY_DIR = Path(__file__).resolve().parent.parent / "data" / "replay"
-
-
-def replay_names() -> list[str]:
-    return sorted(path.stem for path in (REPLAY_DIR / "osv" / "vulns").glob("*.json"))
 
 
 class AdvisoryUnavailable(Exception):
@@ -73,15 +67,9 @@ def is_affected(record: dict, package: Package) -> bool:
 
 
 class AdvisorySource:
-    def __init__(
-        self,
-        offline: bool = False,
-        directory: Path | None = None,
-        only: set[str] | None = None,
-    ) -> None:
+    def __init__(self, offline: bool = False, directory: Path | None = None) -> None:
         self.offline = offline
         self.directory = Path(directory) if directory else DEFAULT_CACHE
-        self.only = only  # when set, only these records (by file name) are used
         self.warnings: list[str] = []
         self._records: dict[str, dict] | None = None
 
@@ -98,7 +86,6 @@ class AdvisorySource:
             self._records = {
                 path.stem: json.loads(path.read_text(encoding="utf-8"))
                 for path in sorted(folder.glob("*.json"))
-                if self.only is None or path.stem in self.only
             }
         return self._records
 

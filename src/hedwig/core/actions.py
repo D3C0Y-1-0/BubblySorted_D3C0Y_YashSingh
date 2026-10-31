@@ -7,7 +7,7 @@ arrives with the deployment phase.
 import json
 from pathlib import Path
 
-from hedwig.core import audit, report, runner
+from hedwig.core import audit, deploy, report, runner
 from hedwig.core.models import Run
 
 STATE = Path(".hedwig") / "state.json"
@@ -34,11 +34,36 @@ def merge(root: Path, top: Path, branch: str, service: str) -> str | None:
     return None if ok else (done.stderr or done.stdout).strip()[-300:]
 
 
-def takedown(root: Path, service: str, reason: str) -> None:
+def takedown(root: Path, service: str, reason: str) -> str:
+    """Stop the service (`docker compose stop`) when there is a compose file, and record it.
+
+    Returns what happened, so callers can show it. Without a compose file the takedown is
+    only recorded, as before.
+    """
+    try:
+        deploy.stop(root, service)
+        note = "stopped with docker compose"
+    except deploy.DeployError as err:
+        note = f"recorded only ({err})"
     state = load_state(root)
-    state.setdefault("down", {})[service] = {"reason": reason, "status": "pending executor"}
+    state.setdefault("down", {})[service] = {"reason": reason, "status": note}
     _save_state(root, state)
-    audit.record(root, "action", action="takedown", service=service, reason=reason)
+    audit.record(root, "action", action="takedown", service=service, reason=reason, result=note)
+    return note
+
+
+def resume(root: Path, service: str) -> str:
+    """Start the service again and clear its down record."""
+    try:
+        deploy.start(root, service)
+        note = "started with docker compose"
+    except deploy.DeployError as err:
+        note = f"record cleared only ({err})"
+    state = load_state(root)
+    state.setdefault("down", {}).pop(service, None)
+    _save_state(root, state)
+    audit.record(root, "action", action="resume", service=service, result=note)
+    return note
 
 
 def is_down(root: Path, service: str) -> bool:
@@ -60,6 +85,6 @@ def notify_pm(root: Path, service: str, reason: str) -> report.Sent:
     sent = report.send_service_report(root, service)
     audit.record(
         root, "action", action="notify_pm", service=service, reason=reason, ok=sent.ok,
-        message=sent.message[:300],
+        message=sent.message[:300], pdf=str(sent.pdf or ""),
     )  # fmt: skip
     return sent

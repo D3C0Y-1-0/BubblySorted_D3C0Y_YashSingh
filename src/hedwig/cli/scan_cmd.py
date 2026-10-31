@@ -10,12 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from hedwig.core import engine, evidence, inventory
-from hedwig.core.advisories import (
-    REPLAY_DIR,
-    AdvisorySource,
-    AdvisoryUnavailable,
-    replay_names,
-)
+from hedwig.core.advisories import AdvisorySource, AdvisoryUnavailable
 from hedwig.core.models import Decision, Finding, ScanResult
 
 console = Console()
@@ -293,49 +288,6 @@ def explain(
 PATTERN_HELP = "Attack to write: " + ", ".join(rule.id for rule in evidence.RULES)
 
 
-def replay(
-    name: Annotated[str, typer.Argument(help=f"Advisory to inject: {', '.join(replay_names())}.")],
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Print the decisions only (nothing acts yet).")
-    ] = False,
-    tier: Tier = "medium",
-    json_output: AsJson = False,
-) -> None:
-    """Inject a known advisory into the pipeline and show what Hedwig would do about it."""
-    if name not in replay_names():
-        raise _fail(f"Unknown advisory '{name}'. Available: {', '.join(replay_names())}.", 1)
-    source = AdvisorySource(offline=True, directory=REPLAY_DIR, only={name})
-    try:
-        result = engine.scan(Path.cwd(), source, tier, save=False)
-    except (AdvisoryUnavailable, RuntimeError) as err:
-        raise _fail(str(err)) from err
-    if json_output:
-        _print_json(result)
-        return
-    for warning in result.warnings:
-        console.print(f"[yellow]warning:[/yellow] {warning}")
-    if not result.findings:
-        console.print(f"{name} does not affect any service in this folder.")
-        return
-    table = Table(title=f"Replay of {name}")
-    for column in ("severity", "service", "package", "advisory", "ev", "decision"):
-        table.add_column(column, overflow="fold")
-    for f in result.findings:
-        style = SEVERITY_STYLE[f.severity]
-        table.add_row(
-            f"[{style}]{f.severity}[/{style}]",
-            f.service,
-            f"{f.package}@{f.version}",
-            f.id,
-            str(f.evidence_level),
-            _decision_label(f.decision),
-        )
-    console.print(table)
-    for f in result.findings:
-        console.print(f"  [bold]{f.id}[/bold] {f.package}@{f.version}: {f.reasoning}")
-    console.print("\nNothing was changed. Run fix <service> to act on it.")
-
-
 def simulate_attack(
     service: Annotated[str, typer.Argument(help="Service (folder) to attack.")],
     compromise: Annotated[
@@ -363,13 +315,11 @@ APP_USAGE = {
     "scan": "/scan [path|git-url] [--offline] [--advisories DIR] [--tier TIER] [--json]",
     "status": "/status [--offline] [--advisories DIR] [--tier TIER] [--json]",
     "explain": "/explain <id> [--offline] [--advisories DIR] [--tier TIER] [--json]",
-    "replay": "/replay <advisory> [--dry-run] [--tier TIER] [--json]",
     "simulate-attack": "/simulate-attack <service> [--compromise] [--pattern ID]",
 }
 _APP_FLAGS = {
     "--offline": "offline",
     "--json": "json_output",
-    "--dry-run": "dry_run",
     "--compromise": "compromise",
 }
 _APP_OPTIONS = {"--advisories": "advisories", "--tier": "tier", "--pattern": "pattern"}
@@ -377,10 +327,9 @@ _ALLOWED = {
     "scan": {"offline", "advisories", "tier", "json_output"},
     "status": {"offline", "advisories", "tier", "json_output"},
     "explain": {"offline", "advisories", "tier", "json_output"},
-    "replay": {"dry_run", "tier", "json_output"},
     "simulate-attack": {"compromise", "pattern"},
 }
-_POSITIONALS = {"scan": (0, 1), "status": (0, 0), "explain": (1, 1), "replay": (1, 1)}
+_POSITIONALS = {"scan": (0, 1), "status": (0, 0), "explain": (1, 1)}
 _POSITIONALS["simulate-attack"] = (1, 1)
 
 
@@ -426,8 +375,6 @@ def run_in_app(name: str, args: list[str], root: Path) -> None:
             status(**options)
         elif name == "explain":
             explain(positional[0], **options)
-        elif name == "replay":
-            replay(positional[0], **options)
         else:
             simulate_attack(positional[0], **options)
     except typer.Exit:
@@ -438,5 +385,4 @@ def register(app: typer.Typer) -> None:
     app.command("scan")(scan)
     app.command("status")(status)
     app.command("explain")(explain)
-    app.command("replay")(replay)
     app.command("simulate-attack")(simulate_attack)
