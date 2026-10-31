@@ -1,83 +1,151 @@
-"""Hedwig the owl, drawn in ASCII (ASCII only, so it renders in Windows consoles)."""
+"""Hedwig the owl, drawn as pixel art with half-block characters.
 
-from rich.console import Group
+Each art string is one row of pixels; each letter is a colour from PALETTE and "." is
+transparent. Two pixel rows are packed into one terminal row with the upper half block,
+so the owl renders as solid colour rather than line strokes.
+"""
+
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-ART = r"""
-     /\
-    /  \         /\/\         /\/\
-    |  |        /  \ \_______/ /  \
-    |  |       |  .---.   .---.   |
-    |  |       | ( (@) ) ( (@) )  |
-  __|  |__     |  '---'  <>'---'  |   ,==========,
- [__====__]    |~~~~~~~~~\/~~~~~~~|  / \   /\   / \
-    ||||       /~~~~~~~~~~~~~~~~~~\ |   \ /  \ /   |
-    ||||      /~~~/ ,,,,,,,, \~~~~~\|    \\  //    |
-  ~~~||||~~~~/~~~~/ ,,,,,,,,,, \~~~~\\    \\//    /
- ~~~~~~||~~~|~~~~~|  ,,,,,,,,,,  |~~~|\    ||    /
-  ~~~~~~~~~~|~~~~~|  ,,,,,,,,,,  |    '\   \/   /'
-    ~~~~~~~~ \~~~~~\  ,,,,,,,,  /      '-.____.-'
-       ~~~~~~~\~~~~~'-.______.-'
-               _/|\_      _/|\_
-""".strip("\n").splitlines()
-
-SHIELD_COL = 37
-BODY_COL = 13
-
-STYLES = {
-    "s": "grey70",  # sword blade
-    "g": "gold1",  # gold: hilt, shield rim
-    "b": "dark_orange3",  # brown feathers and arm
-    "c": "wheat1",  # cream belly
-    "k": "grey23",  # glasses and eyes
-    "r": "red",  # scarf and cape
-    "o": "orange1",  # beak and feet
-    "y": "yellow",  # shield emblem
-    " ": "",
+PALETTE = {
+    "K": "#2b160d",  # outline
+    "B": "#a65a2e",  # brown feathers
+    "D": "#74391b",  # dark brown (knuckles)
+    "C": "#f7dfb9",  # cream
+    "c": "#e6c193",  # cream shade
+    "W": "#ffffff",  # eye white
+    "E": "#1a0d06",  # pupil
+    "O": "#f7a21b",  # beak and feet
+    "R": "#e23a2c",  # scarf and cape
+    "Q": "#a3201a",  # dark red folds
+    "G": "#f5bd2a",  # gold
+    "H": "#b9800f",  # dark gold
+    "S": "#a9adb8",  # steel
+    "L": "#eef0f5",  # light steel
+    "N": "#6e3b1f",  # shield wood
 }
 
+# Full mascot: sword, glasses, scarf, cape and shield. 39 cols x 16 rows.
+HERO = (
+    ".....KK................................",
+    "....KLSK...............................",
+    "....KLSK...............................",
+    "....KLSK...............................",
+    "....KLSK...KK................KK........",
+    "....KLSK..KBBK..KKKKKKKKKK..KBBK.......",
+    "....KLSK..KBBBKKBBBBBBBBBBKKBBBK.......",
+    "....KLSK.KBBBBBBBBBBBBBBBBBBBBBBK......",
+    "....KLSKKBBBCCCCCCCBBBBCCCCCCCBBBK.....",
+    "....KLSKKBBCKKKKKCCCCCCCCKKKKKCBBK.....",
+    "..KKKKKKKKBKWWWWWKCCCCCCKWWWWWKBBK.....",
+    ".KHGGGGGGHKKWWEEWKKKKKKKKWWEEWKKKK.....",
+    "..KKKKKKKKBKWEEEWKCCOOCCKWEEEWKBBK.....",
+    "..KKKKKKKKBKWWWWWKCCOOCCKWWWWWKBBK.....",
+    ".KBDBDBDBBKCKKKKKCCCRRCCCKKKKKCBBK.....",
+    ".KBBBBBBBBKCCCCCCCCCCCCCCCCCCCCBK......",
+    "..KBBBBBBBKGRRRRRRRRRRRRRRRRRRRRQK.....",
+    "...KBBBBBBKRRRRRRRRRRRRRRRRRRRRQQK.....",
+    "....KBBBBBBBBBcCCCCCCCCCCCCcBKKKKKKKKKK",
+    ".....KBBBBBBBcCCCCCCCCCCCCCCcKGGGGGGGGK",
+    "....KRKBBBBBcCCCCCCCCCCCCCCCCKGNNNNNNGK",
+    "...KRRRQKBBBcCCCCCCCCCCCCCCCCKGGNNNNGGK",
+    "..KRRRQRKBBBcCCCCCCCCCCCCCCCCKGNGGGGNGK",
+    ".KRRRQRRKBBBcCCCCCCCCCCCCCCCCKGNNGGNNGK",
+    "KRRRQRRRKBBBBcCCCCCCCCCCCCCCcKGNNGGNNGK",
+    "KRRQRRRRRKBBBBcCCCCCCCCCCCCcBKGNNNNNNGK",
+    ".KKRQRRRRKBBBBBccCCCCCCCCccBBBKGNNNNGK.",
+    "...KKQRRRRKBBBBBBccccccccBBBBBKGNNNNGK.",
+    ".....KKQRR.KKBBBBBBBBBBBBBBBBKKKGNNGK..",
+    ".......KKR...KOOOKKKKKKKKOOOK...KGGK...",
+    "............KOOOOOK....KOOOOOK...KK....",
+    "............KOKOKOK....KOKOKOK.........",
+)
 
-def _code(row: int, col: int, ch: str) -> str:
-    if ch == " ":
-        return " "
-    if ch == "~":
-        return "r"
-    if col >= SHIELD_COL:
-        return "y" if ch in "\\/|" and 7 <= row <= 11 and col >= SHIELD_COL + 3 else "g"
-    if col < BODY_COL:
-        if row <= 4:
-            return "s"
-        return "g" if row in (5, 6) else "b"
-    if ch == ",":
-        return "c"
-    if ch in "()@":
-        return "k"
-    if ch in "<>":
-        return "o"
-    if row >= 14:
-        return "o"
-    return "b"
+# Head and scarf only. 26 cols x 8 rows.
+BUST = (
+    "...KK................KK...",
+    "..KBBK..KKKKKKKKKK..KBBK..",
+    "..KBBBKKBBBBBBBBBBKKBBBK..",
+    ".KBBBBBBBBBBBBBBBBBBBBBBK.",
+    "KBBBCCCCCCCBBBBCCCCCCCBBBK",
+    "KBBCKKKKKCCCCCCCCKKKKKCBBK",
+    "KBBKWWWWWKCCCCCCKWWWWWKBBK",
+    "KKKKWWEEWKKKKKKKKWWEEWKKKK",
+    "KBBKWEEEWKCCOOCCKWEEEWKBBK",
+    "KBBKWWWWWKCCOOCCKWWWWWKBBK",
+    "KBBCKKKKKCCCRRCCCKKKKKCBBK",
+    ".KBCCCCCCCCCCCCCCCCCCCCBK.",
+    "KQRRRRRRRRRRRRRRRRRRRRRRQK",
+    "KQQRRRRRRRRRRRRRRRRRRRRQQK",
+    "KBBBBBcCCCCCCCCCCCCcBBBBBK",
+    ".KKKKKKKKKKKKKKKKKKKKKKKK.",
+)
+
+# Tiny badge owl. 16 cols x 7 rows.
+MINI = (
+    "..KK........KK..",
+    ".KBBKKKKKKKKBBK.",
+    "KBBBBBBBBBBBBBBK",
+    "KBKKKBBBBBBKKKBK",
+    "KKWEWKKKKKKWEWKK",
+    "KKWEWKCOOCKWEWKK",
+    "KBKKKCCOOCCKKKBK",
+    "KBCCCCCCCCCCCCBK",
+    "KQRRRRRRRRRRRRQK",
+    ".KBcCCCCCCCCcBK.",
+    "..KBcCCCCCCcBK..",
+    "...KKKKKKKKKK...",
+    "....KOK..KOK....",
+)
 
 
-def mascot() -> Text:
+def _pixel_text(art: tuple[str, ...]) -> Text:
+    rows = list(art)
+    if len(rows) % 2:
+        rows.append("." * len(rows[0]))
     text = Text(no_wrap=True)
-    for row, line in enumerate(ART):
-        for col, ch in enumerate(line):
-            text.append(ch, style=STYLES[_code(row, col, ch)])
+    for top_row, bottom_row in zip(rows[::2], rows[1::2], strict=True):
+        for top, bottom in zip(top_row, bottom_row, strict=True):
+            fg, bg = PALETTE.get(top), PALETTE.get(bottom)
+            if fg:
+                text.append("▀", Style(color=fg, bgcolor=bg))
+            elif bg:
+                text.append("▄", Style(color=bg))
+            else:
+                text.append(" ")
         text.append("\n")
     text.rstrip()
     return text
+
+
+class Mascot:
+    """Renders pixel art, or nothing when the output can't encode block characters."""
+
+    def __init__(self, art: tuple[str, ...] = HERO) -> None:
+        self.art = art
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        if options.encoding.lower().startswith("utf"):
+            yield _pixel_text(self.art)
+
+
+def mascot(art: tuple[str, ...] = HERO) -> Mascot:
+    return Mascot(art)
 
 
 def banner() -> Table:
     from hedwig import __version__
 
     title = Text.assemble(
-        ("HEDWIG\n", "bold gold1"),
+        ("HEDWIG\n", "bold #f5bd2a"),
         ("threat early warning\n", "italic"),
         (f"v{__version__}", "dim"),
     )
     grid = Table.grid(padding=(0, 3))
-    grid.add_row(mascot(), Group(Text("\n\n\n"), title))
+    grid.add_column()
+    grid.add_column(vertical="middle")
+    grid.add_row(mascot(), title)
     return grid
