@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> None:
         has_key = bool(service.api_key_env and os.environ.get(service.api_key_env))
         if not service.challenge and not has_key:
             print(f"chakravyuha: {name} has challenge: false and no API key set; ring 3 is open.")
+        if not service.routes:
+            print(f"chakravyuha: {name} lists no routes; ring 4 is open for it.")
     app = create_app(settings, token=os.environ.get("CHAKRA_TOKEN"))
     quiet = {"log_level": "warning", "access_log": False}
     servers = [uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, **quiet))]

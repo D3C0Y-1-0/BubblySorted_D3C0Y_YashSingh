@@ -23,6 +23,7 @@ from . import state as signals
 from .challenge import Challenger
 from .config import Config, Service
 from .events import EventBus, make_event
+from .routes import RouteRing
 from .state import State
 from .stats import Stats
 
@@ -81,6 +82,7 @@ class Guard:
         self.bus = bus or EventBus(config.data_dir, stdout=config.stdout_events)
         self.secret = load_secret(config.data_dir)
         self.challenger = Challenger(self.secret, clock=wallclock)
+        self.route_ring = RouteRing(config)
         self.stats = Stats()
         self.bus.listeners.append(self.stats.record)
         self.sleep = sleep
@@ -147,14 +149,35 @@ class Guard:
         if stop.trap and not self.state.trap(ctx.ip):
             action = "blocked"
         self.emit(action, ctx, stop.status, stop.ring, category=stop.category, rule=stop.rule)
+        if stop.ring != 1 and not stop.trap:
+            self.trap_if_suspicious(ctx)
         response = Response(
             stop.body or "Forbidden", stop.status, headers=stop.headers, media_type=stop.media_type
         )
         return self.with_security(response)
 
+    def trap_if_suspicious(self, ctx: rings.Ctx) -> bool:
+        """Suspicion at the trap threshold draws the client into the maze (never in monitor mode
+        and never an allowlisted client)."""
+        state = self.state
+        if (
+            self.monitoring(ctx)
+            or state.trapped(ctx.ip)
+            or state.suspicion(ctx.client) < self.trap_threshold(ctx)
+            or not state.trap(ctx.ip)
+        ):
+            return False
+        self.emit("trapped", ctx, None, 7, category="trap", rule="suspicion")
+        return True
+
+    def trap_threshold(self, ctx: rings.Ctx) -> float:
+        return self.config.suspicion.trap
+
     def run_ring(self, number: int, ring: Callable, ctx: rings.Ctx) -> Response | None:
         try:
             stop = ring(ctx, self.state, self.config)
+            if stop and number == 3 and stop.action == "challenged":
+                self.route_ring.score(ctx, self.state)  # probing scores even without a session
         except Exception as error:  # fail open
             self.guard_error(ctx, number, error)
             return None
@@ -218,7 +241,7 @@ class Guard:
             state.in_flight -= 1
 
     async def _handle(self, request: Request, ctx: rings.Ctx) -> Response:
-        state, config = self.state, self.config
+        config = self.config
         for number, ring in ((1, rings.gate), (2, rings.flood)):
             if response := self.run_ring(number, ring, ctx):
                 return response
@@ -240,9 +263,9 @@ class Guard:
         except ClientDisconnect:
             return Response(status_code=499)
 
-        if ctx.service is None:
-            # Ring 4 (phase C5) scores unknown routes; until then they are simply not found.
-            self.emit("blocked", ctx, 404, 4, rule="no-service")
+        if response := self.run_ring(4, self.route_ring.ring, ctx):
+            return response
+        if ctx.service is None:  # ring 4 failed open or is monitoring: there is nowhere to go
             return self.with_security(PlainTextResponse("Not Found", 404))
 
         try:
@@ -250,10 +273,8 @@ class Guard:
         except Exception as error:
             self.guard_error(ctx, 5, error)
 
-        if state.suspicion(ctx.client) >= config.suspicion.trap and not state.allowlisted(ctx.ip):
-            stop = rings.Stop(7, 403, "trapped", "suspicion", category="trap", trap=True)
-            if response := self.stop_response(ctx, stop):
-                return response
+        if self.trap_if_suspicious(ctx):
+            return self.with_security(PlainTextResponse("Forbidden", 403))
 
         return await self.forward(ctx)
 
