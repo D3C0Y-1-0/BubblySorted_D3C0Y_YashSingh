@@ -6,6 +6,7 @@ and a fresh snapshot every second.
 """
 
 import asyncio
+import hmac
 import json
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,11 @@ BATCH = 500
 
 def _active(table: dict[str, float], check) -> list[str]:
     return [ip for ip in list(table) if check(ip)]
+
+
+def _left(table: dict[str, float], ips, now: float) -> list[dict]:
+    rows = [{"ip": ip, "left_s": round(table.get(ip, now) - now)} for ip in ips]
+    return sorted(rows, key=lambda r: -r["left_s"])[:50]
 
 
 def snapshot(guard: Guard, *, events: int = 0) -> dict[str, Any]:
@@ -87,9 +93,45 @@ def snapshot(guard: Guard, *, events: int = 0) -> dict[str, Any]:
             for c in suspects
         ],
     }
+    state_now = state.now()
+    data.update(
+        {
+            "trapped_list": _left(state.traps, trapped, state_now),
+            "banned_list": _left(state.bans, banned, state_now),
+            "services": {
+                name: guard.config.service_mode(svc) for name, svc in guard.config.services.items()
+            },
+            "alarms": list(guard.alarms),
+            "campaigns": guard.campaigns[:20],
+            "feed": list(guard.feed)[-30:],
+            "agents": guard.agents_status,
+            "elk": guard.elk_status,
+            "shipper_dropped": getattr(getattr(guard, "shipper", None), "dropped", 0),
+        }
+    )
     if events:
         data["events"] = guard.bus.recent(events)
     return data
+
+
+def control(guard: Guard, data: dict[str, Any]) -> tuple[bool, str]:
+    """An operator action from the dashboard. Allowlist changes are not among them."""
+    action = str(data.get("action", ""))
+    ip = str(data.get("ip", ""))[:64]
+    if action == "release":
+        return guard.release(ip), f"released {ip}"
+    if action == "lift_ban":
+        return guard.lift_ban(ip), f"lifted the ban on {ip}"
+    if action == "level":
+        level = str(data.get("level", ""))
+        return guard.set_level(level), f"level {level}"
+    if action == "mode":
+        service, mode = str(data.get("service", "")), str(data.get("mode", ""))
+        return guard.set_mode(service, mode), f"{service} {mode}"
+    if action == "rotate_tokens" and hasattr(guard, "rotate_tokens"):
+        guard.rotate_tokens("Operator")
+        return True, "honeytokens rotated"
+    return False, f"unknown action {action!r}"
 
 
 def _sse(kind: str, data: Any) -> str:
@@ -138,11 +180,25 @@ def create_dashboard(guard: Guard) -> Starlette:
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
+    async def api_control(request: Request):
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not guard.token or not hmac.compare_digest(supplied.encode(), guard.token.encode()):
+            return JSONResponse({"ok": False, "error": "unauthorized"}, 401)
+        try:
+            data = await request.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return JSONResponse({"ok": False, "error": "expected a JSON object"}, 400)
+        ok, message = control(guard, data)
+        return JSONResponse({"ok": ok, "message": message}, 200 if ok else 400)
+
     return Starlette(
         routes=[
             Route("/", index),
             Route("/api/snapshot", api_snapshot),
             Route("/api/stream", api_stream),
+            Route("/api/control", api_control, methods=["POST"]),
             Mount("/static", StaticFiles(directory=STATIC), name="static"),
         ]
     )

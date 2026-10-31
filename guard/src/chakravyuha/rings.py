@@ -3,8 +3,8 @@ or None (on to the next ring). Rings only describe side effects such as a ban; t
 applies them, so monitor mode can log a decision without acting on it.
 
 Built so far: ring 1 (gate), ring 2 (flood), ring 3 (challenge, in `challenge.py`) and ring 5
-(login). Rings 4, 6 and 7 land in later phases; ring 7 is a placeholder until the decoy bank
-exists.
+(login). Ring 4 is in `routes.py`, ring 7 (the decoy bank) in `decoy.py`; ring 6 lands in a
+later phase.
 """
 
 import json
@@ -55,6 +55,7 @@ class Ctx:
     client: Client
     body: bytes = b""
     tarpit: bool = False
+    trapped: bool = False  # set by ring 1: the decoy answers instead of the service
     username: str | None = None
     password_fp: str | None = None
     extra: dict = field(default_factory=dict)
@@ -70,9 +71,9 @@ class Ctx:
 def gate(ctx: Ctx, state: State, config: Config) -> Stop | None:
     if state.banned(ctx.ip):
         return Stop(1, 403, "blocked", "ban-list", body="Forbidden")
-    if state.trapped(ctx.ip):
-        # Placeholder until phase C6: the decoy bank answers trapped clients there.
-        return Stop(7, 403, "trapped", "trap-list", category="trap", body="Forbidden")
+    # A trapped client is not stopped here: it passes the same rings as everyone else, so the
+    # maze looks earned, and the decoy answers in place of the service at the end.
+    ctx.trapped = state.trapped(ctx.ip)
     return None
 
 

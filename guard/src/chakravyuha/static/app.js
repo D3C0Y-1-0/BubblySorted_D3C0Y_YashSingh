@@ -284,10 +284,164 @@ function applySnapshot(s) {
   $("t-challenges").textContent = `${s.challenges.solved} / ${s.challenges.issued}`;
   renderBars(s.ring_stops);
   renderSuspects(s.suspects);
+  renderHeld(s.trapped_list || [], s.banned_list || []);
+  renderCampaigns(s.campaigns || []);
+  renderFeed(s.feed || []);
+  renderAlarm(s.alarms || []);
+  renderServices(s.services || {});
+  setPill("agents", `agents: ${s.agents}`, s.agents === "ai" ? "on" : "off-line");
+  setPill("elk", `ELK: ${s.elk}` + (s.shipper_dropped ? ` (${s.shipper_dropped} dropped)` : ""),
+    s.elk === "online" ? "on" : s.elk === "offline" ? "off-line" : "");
   updateDots(s.clients);
   if (s.events) {
     logEvents = s.events.slice(-LOG_MAX);
     renderLog();
+  }
+}
+
+// ---- held clients, campaigns, feed, alarms, controls ---------------------------------------
+function text(tag, value, cls) {
+  const node = document.createElement(tag);
+  node.textContent = value ?? "";
+  if (cls) node.className = cls;
+  return node;
+}
+
+function empty(list, message) {
+  list.replaceChildren(text("li", message, "empty"));
+}
+
+function setPill(id, label, cls) {
+  const pill = $(id);
+  pill.textContent = label;
+  pill.className = `pill ${cls || ""}`;
+}
+
+function fmtLeft(s) {
+  return s >= 60 ? `${Math.round(s / 60)} min left` : `${Math.max(s, 0)} s left`;
+}
+
+function renderHeld(trapped, banned) {
+  const list = $("held");
+  if (!trapped.length && !banned.length) return empty(list, "Nobody held");
+  const rows = [];
+  for (const [items, tag, label, action, verb] of [
+    [trapped, "maze", "maze", "release", "Release"],
+    [banned, "ban", "banned", "lift_ban", "Lift ban"],
+  ]) {
+    for (const item of items) {
+      const li = document.createElement("li");
+      const button = text("button", verb);
+      button.type = "button";
+      button.addEventListener("click", () => sendControl({ action, ip: item.ip }));
+      li.append(text("span", label, `tag ${tag}`), text("span", item.ip), text("span", fmtLeft(item.left_s), "left"), button);
+      rows.push(li);
+    }
+  }
+  list.replaceChildren(...rows);
+}
+
+function renderCampaigns(campaigns) {
+  const list = $("campaigns");
+  if (!campaigns.length) return empty(list, "No campaigns named");
+  list.replaceChildren(
+    ...campaigns.map((c) => {
+      const li = document.createElement("li");
+      const ips = c.ips || [];
+      li.append(
+        text("span", `${c.id} · ${c.kind}: ${c.summary}`, "what"),
+        text("span", `${ips.length} IPs: ${ips.slice(0, 12).join(", ")}${ips.length > 12 ? " …" : ""}`, "who"),
+      );
+      return li;
+    }),
+  );
+}
+
+function renderFeed(feed) {
+  const list = $("feed");
+  if (!feed.length) return empty(list, "Quiet");
+  list.replaceChildren(
+    ...feed
+      .slice()
+      .reverse()
+      .map((f) => {
+        const li = document.createElement("li");
+        li.append(text("span", (f["@timestamp"] || "").slice(11, 19), "t"), text("span", f.agent, "agent"), text("span", f.text));
+        return li;
+      }),
+  );
+}
+
+function renderAlarm(alarms) {
+  const box = $("alarm");
+  if (!alarms.length) {
+    box.hidden = true;
+    return;
+  }
+  const a = alarms[alarms.length - 1];
+  box.textContent =
+    `HONEYTOKEN USED · ${a.kind} from ${a.ip}` +
+    (a.issued_to ? ` · handed to trapped client ${a.issued_to}` : "") +
+    (a.banned && a.banned.length ? `\nbanned: ${a.banned.join(", ")}` : "") +
+    (alarms.length > 1 ? `\n(${alarms.length} alarms)` : "");
+  box.hidden = false;
+}
+
+function renderServices(services) {
+  const box = $("c-services");
+  const names = Object.keys(services);
+  if (box.dataset.names === names.join(",")) {
+    for (const name of names) {
+      const input = box.querySelector(`input[data-service="${CSS.escape(name)}"]`);
+      if (input && document.activeElement !== input) input.checked = services[name] === "monitor";
+    }
+    return;
+  }
+  box.dataset.names = names.join(",");
+  box.replaceChildren(
+    ...names.map((name) => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.service = name;
+      input.checked = services[name] === "monitor";
+      input.addEventListener("change", () =>
+        sendControl({ action: "mode", service: name, mode: input.checked ? "monitor" : "block" }),
+      );
+      label.append(input, text("span", `${name} monitor`));
+      return label;
+    }),
+  );
+}
+
+function readToken() {
+  try {
+    return sessionStorage.getItem("chakra-token") || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function sendControl(body) {
+  const msg = $("c-msg");
+  const token = $("token").value.trim();
+  if (!token) {
+    msg.textContent = "Enter the token first.";
+    return;
+  }
+  try {
+    sessionStorage.setItem("chakra-token", token);
+  } catch (_) {}
+  try {
+    const r = await fetch("/api/control", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    msg.textContent = r.status === 401 ? "Wrong token." : data.message || (data.ok ? "Done." : "Refused.");
+  } catch (_) {
+    msg.textContent = "The Guard did not answer.";
   }
 }
 
@@ -372,6 +526,10 @@ $("pause").addEventListener("click", (e) => {
   e.target.setAttribute("aria-pressed", String(paused));
   if (!paused) renderLog();
 });
+
+$("token").value = readToken();
+$("c-set-level").addEventListener("click", () => sendControl({ action: "level", level: $("c-level").value }));
+$("c-rotate").addEventListener("click", () => sendControl({ action: "rotate_tokens" }));
 
 buildFormation();
 renderBars({});

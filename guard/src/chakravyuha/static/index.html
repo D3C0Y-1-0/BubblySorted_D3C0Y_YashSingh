@@ -21,9 +21,12 @@
       <span class="pill level" id="level">calm</span>
       <span class="pill" id="mode">block</span>
       <span class="pill" id="uptime">0s</span>
+      <span class="pill" id="agents" title="Scout, Commander, Illusionist">agents: rules</span>
+      <span class="pill" id="elk" title="Logstash / Elasticsearch">ELK: off</span>
       <span class="pill conn" id="conn">connecting</span>
     </div>
   </header>
+  <div id="alarm" class="alarm" role="alert" hidden></div>
 
   <main class="grid">
     <section class="panel formation">
@@ -34,7 +37,7 @@
         <span><i class="sw s3"></i>tarpit</span>
         <span><i class="sw s5"></i>hard challenge</span>
         <span><i class="sw s10"></i>trap</span>
-        <span><i class="sw tablet"></i>allowlisted</span>
+        <span><i class="sw tablet"></i>allowlisted (demo browser)</span>
       </div>
       <div id="tip" class="tip" hidden></div>
     </section>
@@ -60,6 +63,37 @@
       <div class="panel">
         <h2>Top suspects</h2>
         <ol id="suspects" class="suspects"><li class="empty">No suspicion yet</li></ol>
+      </div>
+
+      <div class="panel">
+        <h2>In the maze &amp; banned</h2>
+        <ul id="held" class="held"><li class="empty">Nobody held</li></ul>
+      </div>
+
+      <div class="panel">
+        <h2>Campaigns</h2>
+        <ul id="campaigns" class="campaigns"><li class="empty">No campaigns named</li></ul>
+      </div>
+
+      <div class="panel">
+        <h2>Agent feed</h2>
+        <ol id="feed" class="feed"><li class="empty">Quiet</li></ol>
+      </div>
+
+      <div class="panel controls">
+        <h2>Controls</h2>
+        <label class="token">Token
+          <input id="token" type="password" autocomplete="off" placeholder="CHAKRA_TOKEN">
+        </label>
+        <div class="row">
+          <select id="c-level" aria-label="Alert level">
+            <option>calm</option><option>alert</option><option>siege</option>
+          </select>
+          <button type="button" id="c-set-level">Set level</button>
+          <button type="button" id="c-rotate">Rotate honeytokens</button>
+        </div>
+        <div id="c-services" class="row services"></div>
+        <p id="c-msg" class="msg" role="status"></p>
       </div>
     </section>
 

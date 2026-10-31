@@ -154,3 +154,37 @@ tr.monitor td:nth-child(4)::after { content: " (monitor)"; color: var(--muted); 
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tile.wide { grid-column: span 2; }
 }
+
+/* alarms, held clients, campaigns, feed, controls */
+.alarm {
+  margin: 12px 20px 0; padding: 12px 16px; border-radius: 10px; font-weight: 600;
+  background: color-mix(in srgb, var(--s10) 22%, var(--panel)); border: 1px solid var(--s10);
+  color: #fff; white-space: pre-line; animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--s10) 25%, transparent); } }
+.pill.on { color: var(--ok); }
+.pill.off-line { color: var(--s5); }
+.held, .campaigns, .feed { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
+.held li, .campaigns li, .feed li {
+  display: flex; gap: 8px; align-items: baseline; padding: 5px 0;
+  border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums;
+}
+.held .tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); }
+.held .tag.maze { color: var(--maze); border-color: var(--maze); }
+.held .tag.ban { color: var(--s10); border-color: var(--s10); }
+.held .left, .feed .t { color: var(--muted); font-size: 12px; }
+.held button { margin-left: auto; }
+.campaigns li { flex-direction: column; align-items: stretch; }
+.campaigns .what { font-weight: 600; }
+.campaigns .who { color: var(--muted); font-size: 12px; word-break: break-all; }
+.feed .agent { color: var(--gold); min-width: 86px; }
+.empty { color: var(--muted); }
+.controls .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+.controls .token { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.controls input, .controls select, .controls button, .held button {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; font: inherit;
+}
+.controls button:hover, .held button:hover { border-color: var(--gold); cursor: pointer; }
+.services label { display: flex; gap: 6px; align-items: center; }
+.msg { color: var(--muted); min-height: 1.2em; margin: 8px 0 0; }

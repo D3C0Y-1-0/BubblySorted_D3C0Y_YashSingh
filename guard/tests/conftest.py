@@ -1,3 +1,5 @@
+import random
+
 import httpx
 import pytest
 from starlette.applications import Starlette
@@ -7,6 +9,7 @@ from starlette.routing import Route
 
 from chakravyuha.challenge import COOKIE
 from chakravyuha.config import Config
+from chakravyuha.decoy import Decoy, default_dataset
 from chakravyuha.proxy import create_app
 from chakravyuha.state import State
 
@@ -43,10 +46,17 @@ class Upstream:
                 "body": body,
             }
         )
+        bank = {"x-bank": "demo"}  # a header of the real service, for the decoy to copy
         if request.url.path == "/login":
             data = await request.json() if body else {}
             ok = data.get("password") == "demo-pass"
-            return JSONResponse({"ok": ok}, 200 if ok else 401)
+            response = JSONResponse({"ok": ok}, 200 if ok else 401, headers=bank)
+            if ok:
+                response.set_cookie("bank_session", "real-session", path="/", httponly=True)
+            return response
+        if request.url.path == "/balance":
+            body = {"account": "DE00 0000 0000 0042", "balance": 1234.56, "currency": "EUR"}
+            return JSONResponse(body, headers=bank)
         return Response(body, 200, media_type="application/octet-stream")
 
     def app(self) -> Starlette:
@@ -87,6 +97,7 @@ def make_guard():
             transport=httpx.ASGITransport(app=upstream.app()),
             state=State(config, clock=clock),
             sleep=sleeps,
+            decoy=Decoy(config, dataset=default_dataset(), rng=random.Random(4)),
         )
         guard = app.state.guard
 

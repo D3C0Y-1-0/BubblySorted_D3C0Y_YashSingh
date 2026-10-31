@@ -8,7 +8,9 @@ import hmac
 import os
 import secrets
 import time
+from collections import deque
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -22,6 +24,7 @@ from . import challenge, rings
 from . import state as signals
 from .challenge import Challenger
 from .config import Config, Service
+from .decoy import Decoy
 from .events import EventBus, make_event
 from .routes import RouteRing
 from .state import State
@@ -75,6 +78,7 @@ class Guard:
         state: State | None = None,
         sleep: Callable = asyncio.sleep,
         wallclock: Callable[[], float] = time.time,
+        decoy: Decoy | None = None,
     ) -> None:
         self.config = config
         self.token = token
@@ -83,6 +87,13 @@ class Guard:
         self.secret = load_secret(config.data_dir)
         self.challenger = Challenger(self.secret, clock=wallclock)
         self.route_ring = RouteRing(config)
+        self.decoy = decoy or Decoy(config)
+        # Shared with the dashboard and, from C7 and C10 on, the honeytokens and the agents.
+        self.feed: deque[dict] = deque(maxlen=100)  # one line per agent or operator decision
+        self.alarms: deque[dict] = deque(maxlen=20)  # honeytoken alarms
+        self.campaigns: list[dict] = []
+        self.agents_status = "rules"  # rules | ai | offline
+        self.elk_status = "off"  # off | online | offline
         self.stats = Stats()
         self.bus.listeners.append(self.stats.record)
         self.sleep = sleep
@@ -273,10 +284,56 @@ class Guard:
         except Exception as error:
             self.guard_error(ctx, 5, error)
 
-        if self.trap_if_suspicious(ctx):
-            return self.with_security(PlainTextResponse("Forbidden", 403))
-
+        self.trap_if_suspicious(ctx)
+        if ctx.trapped or self.state.trapped(ctx.ip):
+            return await self.maze(ctx)
         return await self.forward(ctx)
+
+    async def maze(self, ctx: rings.Ctx) -> Response:
+        """Ring 7: the decoy answers. The real service never sees this request."""
+        answer = self.decoy.respond(ctx, self.state)
+        delay = answer.delay
+        if ctx.tarpit:
+            delay = max(delay, rings.tarpit_delay(self.state.suspicion(ctx.client), self.config))
+        if delay:
+            await self.sleep(delay)
+        self.emit(
+            "trapped", ctx, answer.status, 7, category="trap", rule=answer.rule,
+            **{"hedwig.decoy": True},
+        )  # fmt: skip
+        return self.with_security(answer.response)
+
+    def note(self, agent: str, text: str) -> None:
+        stamp = datetime.now(UTC).isoformat(timespec="seconds")
+        self.feed.append({"@timestamp": stamp, "agent": agent, "text": text[:300]})
+
+    def lift_ban(self, ip: str) -> bool:
+        lifted = self.state.lift_ban(ip)
+        if lifted:
+            self.bus.emit(make_event("released", ip=ip, ring=1, rule="ban-lifted"))
+        return lifted
+
+    def set_level(self, level: str, agent: str = "Operator", why: str = "") -> bool:
+        if level not in ("calm", "alert", "siege") or level == self.state.level:
+            return False
+        old, self.state.level = self.state.level, level
+        self.note(agent, f"level {old} → {level}" + (f": {why}" if why else ""))
+        return True
+
+    def set_mode(self, service: str, mode: str) -> bool:
+        svc = self.config.services.get(service)
+        if svc is None or mode not in ("block", "monitor"):
+            return False
+        svc.mode = mode
+        self.note("Operator", f"{service} → {mode} mode")
+        return True
+
+    def release(self, ip: str) -> bool:
+        released = self.state.release(ip)
+        self.decoy.forget(ip)
+        if released:
+            self.bus.emit(make_event("released", ip=ip, ring=7, category="trap", rule="operator"))
+        return released
 
     async def forward(self, ctx: rings.Ctx) -> Response:
         service = ctx.service
@@ -301,6 +358,8 @@ class Guard:
             return self.with_security(PlainTextResponse("Bad Gateway", 502))
 
         status = upstream.status_code
+        if status < 400:  # the decoy copies the real service's header set
+            self.decoy.learn(ctx.service_name or "", list(upstream.headers.multi_items()))
         action, ring, extra = "allowed", "centre", {}
         delay = 0.0
         try:

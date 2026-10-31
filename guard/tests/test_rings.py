@@ -81,7 +81,8 @@ async def test_brute_force_backs_off_trips_and_never_logs_passwords(make_guard):
             body = {"username": "demo", "password": f"guess-{attempt}"}
             response = await c.post("/transaction/login", json=body, headers=BROWSER)
             assert response.status_code == 401
-        assert (await c.get("/transaction/balance", headers=BROWSER)).status_code == 403
+        decoy = await c.get("/transaction/balance", headers=BROWSER)
+        assert decoy.status_code == 200 and decoy.json()["currency"] == "EUR"  # the maze
     assert sleeps.calls[:3] == [0.25, 0.5, 0.75]  # each failure waits longer
     assert guard.state.trapped("10.0.0.5")
     events = guard.bus.recent()
