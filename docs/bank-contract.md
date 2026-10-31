@@ -19,7 +19,7 @@ Conditions the demo bank (Phase 8) must meet. Copied from `plan/claudesPLAN.md`.
 
 **Estate:**
 
-7. `hedwig init bank/` detects exactly the 4 or 5 services with correct languages. After editing tier/allow:
+7. `cd bank && hedwig init` detects exactly the 4 or 5 services with correct languages. After editing tier/allow:
    - transaction: critical, `[open_fix_pr, auto_merge_if_verified, rollback]`
    - account: high, `[open_fix_pr]`
    - support: medium, `[open_fix_pr]`

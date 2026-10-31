@@ -1,6 +1,6 @@
 [project]
 name = "hedwig"
-version = "0.1.1"
+version = "0.1.2"
 description = "Developer-native cyber threat early warning system"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,6 +8,8 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "tomli-w>=1.0",
+    "prompt_toolkit>=3.0",
+    "pyyaml>=6",
 ]
 
 [project.scripts]
