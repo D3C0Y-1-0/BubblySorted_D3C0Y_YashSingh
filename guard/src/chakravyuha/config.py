@@ -105,6 +105,8 @@ class Config(BaseModel):
     data_dir: Path | None = GUARD_ROOT / "data"
     bank_root: Path | None = GUARD_ROOT / "bank"  # where ring 6 appends to service access logs
     stdout_events: bool = True
+    digest_delay_s: float = 30  # first unreported event starts this timer, then one PM email
+    digest_cooldown_s: float = 300  # ... and this cool-down, so a burst sends one email
 
     @field_validator("trap_minutes")
     @classmethod

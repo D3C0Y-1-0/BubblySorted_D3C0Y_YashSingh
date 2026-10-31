@@ -29,6 +29,7 @@ from .decoy import Decoy
 from .elastic import EventSource
 from .events import EventBus, make_event
 from .honeytokens import Honeytokens, Token
+from .notifier import PMNotifier
 from .routes import RouteRing
 from .shipper import Shipper
 from .state import State
@@ -85,6 +86,7 @@ class Guard:
         decoy: Decoy | None = None,
         shipper: Shipper | None = None,
         llm=None,
+        notifier: PMNotifier | None = None,
     ) -> None:
         self.config = config
         self.token = token
@@ -111,7 +113,15 @@ class Guard:
         self.honeytokens = Honeytokens(self.secret, tokens_file)
         self.decoy.fill = self.honeytokens.fill
         self.links: dict[str, set[str]] = {}  # trapped IP -> IPs that used its honeytokens
-        self.alarm_listeners: list[Callable[[dict], None]] = []  # the PM notifier (C11)
+        self.alarm_listeners: list[Callable[[dict], None]] = []
+        self.notifier = notifier or PMNotifier(
+            digest_delay_s=config.digest_delay_s,
+            cooldown_s=config.digest_cooldown_s,
+            summary=self.agents.summary,
+            kibana_url=config.elk.kibana_url,
+        )
+        self.bus.listeners.append(self.notifier.on_event)
+        self.alarm_listeners.append(self.notifier.on_alarm)
         self.stats = Stats()
         self.bus.listeners.append(self.stats.record)
         self.sleep = sleep
@@ -619,6 +629,7 @@ class Guard:
                     await self.agents.tick()
                 else:
                     await self.source.ping()
+                self.notifier.poll()
             except Exception as error:  # the loop must never die
                 print(f"chakravyuha: agents failed: {type(error).__name__}: {error}")
             await asyncio.sleep(self.config.agents.interval_s)
