@@ -107,6 +107,8 @@ class Config(BaseModel):
     stdout_events: bool = True
     digest_delay_s: float = 30  # first unreported event starts this timer, then one PM email
     digest_cooldown_s: float = 300  # ... and this cool-down, so a burst sends one email
+    blocked_hashes: list[str] = Field(default_factory=list)  # SHA-256 uploads to refuse (ring 6)
+    max_response_scan: int = 512 * 1024  # HTML responses up to this size are inspected
 
     @field_validator("trap_minutes")
     @classmethod

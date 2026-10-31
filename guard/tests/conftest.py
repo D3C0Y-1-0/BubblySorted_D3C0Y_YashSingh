@@ -58,6 +58,13 @@ class Upstream:
         if request.url.path == "/balance":
             body = {"account": "DE00 0000 0000 0042", "balance": 1234.56, "currency": "EUR"}
             return JSONResponse(body, headers=bank)
+        if request.url.path == "/phish":  # a response with an injected password form
+            html = "<html><body><form><input type='password' name='pw'></form></body></html>"
+            return Response(html, 200, media_type="text/html")
+        if request.url.path == "/go":  # a redirect to a foreign host
+            return Response("", 302, headers={"location": "https://evil.test/"})
+        if request.url.path == "/htmlok":
+            return Response("<html><body>welcome</body></html>", 200, media_type="text/html")
         return Response(body, 200, media_type="application/octet-stream")
 
     def app(self) -> Starlette:

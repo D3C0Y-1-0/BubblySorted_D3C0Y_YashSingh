@@ -12,6 +12,7 @@ from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 import httpx
 from starlette.applications import Starlette
@@ -20,7 +21,7 @@ from starlette.requests import ClientDisconnect, Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from . import challenge, rings
+from . import challenge, inspection, rings
 from . import state as signals
 from .agents import Agents
 from .challenge import Challenger
@@ -28,6 +29,7 @@ from .config import Config, Service
 from .decoy import Decoy
 from .elastic import EventSource
 from .events import EventBus, make_event
+from .hedwig_link import HedwigLink
 from .honeytokens import Honeytokens, Token
 from .notifier import PMNotifier
 from .routes import RouteRing
@@ -95,6 +97,13 @@ class Guard:
         self.secret = load_secret(config.data_dir)
         self.challenger = Challenger(self.secret, clock=wallclock)
         self.route_ring = RouteRing(config)
+        self.hedwig = HedwigLink(config.bank_root)
+        self.blocked_hashes = {h.lower() for h in config.blocked_hashes}
+        self.own_hosts = {"127.0.0.1", "localhost", ""}
+        for svc in config.services.values():
+            host = httpx.URL(svc.upstream).host
+            if host:
+                self.own_hosts.add(host.lower())
         self.decoy = decoy or Decoy(config)
         # Shared with the dashboard and, from C7 and C10 on, the honeytokens and the agents.
         self.feed: deque[dict] = deque(maxlen=100)  # one line per agent or operator decision
@@ -357,6 +366,8 @@ class Guard:
             self.guard_error(ctx, 5, error)
         if response := self.run_ring(5, self.username_throttle, ctx):
             return response
+        if response := await self.inspect_request(ctx):
+            return response
 
         self.trap_if_suspicious(ctx)
         if ctx.trapped or self.state.trapped(ctx.ip):
@@ -498,6 +509,64 @@ class Guard:
             self.bus.emit(make_event("released", ip=ip, ring=7, category="trap", rule="operator"))
         return released
 
+    # -- ring 6: inspection ----------------------------------------------------------------
+    async def inspect_request(self, ctx: rings.Ctx) -> Response | None:
+        service = ctx.service
+        if service is None:
+            return None
+        try:
+            body_text = ctx.body[: self.config.max_body_bytes].decode("utf-8", "replace")
+            decoded = unquote(ctx.path + "?" + ctx.query)  # payloads are often percent-encoded
+            finding = inspection.scan_payload(ctx.path, ctx.query, decoded, body_text)
+            if finding is None:
+                finding = inspection.open_redirect(
+                    ctx.query, self.own_hosts, service.redirect_hosts
+                )
+            if finding is None and service.uploads is not True:
+                finding = inspection.scan_upload(ctx.body, service.uploads, self.blocked_hashes)
+        except Exception as error:  # fail open
+            self.guard_error(ctx, 6, error)
+            return None
+        if finding is None:
+            return None
+        return await self.apply_inspection(ctx, finding)
+
+    async def apply_inspection(
+        self, ctx: rings.Ctx, finding: inspection.Finding
+    ) -> Response | None:
+        if finding.category == "payload":  # the link to Hedwig: evidence level 3 for the service
+            # decoded, so evidence.read_log's patterns match the payload in the log line
+            target = unquote(ctx.path + (f"?{ctx.query}" if ctx.query else ""))
+            self.hedwig.record(ctx.service_name, ctx.ip, ctx.method, target, finding.status,
+                               finding.rule)  # fmt: skip
+        if self.monitoring(ctx):
+            self.emit(finding.status and "trapped" if finding.trap else "blocked", ctx,
+                      finding.status, 6, category=finding.category, rule=finding.rule,
+                      **{"hedwig.monitor": True})  # fmt: skip
+            return None
+        if finding.trap:
+            self.state.trap(ctx.ip)
+            self.emit("trapped", ctx, None, 6, category=finding.category, rule=finding.rule)
+            return await self.maze(ctx)
+        self.emit("blocked", ctx, finding.status, 6, category=finding.category, rule=finding.rule)
+        return self.with_security(PlainTextResponse("Forbidden", finding.status))
+
+    def inspect_response(self, ctx: rings.Ctx, status: int, headers, body: bytes):
+        """Returns a Finding when the response should be replaced, else None."""
+        try:
+            if 300 <= status < 400:
+                location = headers.get("location", "")
+                if inspection.external_location(
+                    location, self.own_hosts, (ctx.service.redirect_hosts if ctx.service else [])
+                ):
+                    return inspection.Finding("response", "open-redirect-location", "phishing",
+                                              trap=False, status=502)  # fmt: skip
+            if body:
+                return inspection.scan_response(body, headers.get("content-type", ""))
+        except Exception as error:  # fail open
+            self.guard_error(ctx, 6, error)
+        return None
+
     async def forward(self, ctx: rings.Ctx) -> Response:
         service = ctx.service
         assert service is not None
@@ -523,6 +592,21 @@ class Guard:
         status = upstream.status_code
         if status < 400:  # the decoy copies the real service's header set
             self.decoy.learn(ctx.service_name or "", list(upstream.headers.multi_items()))
+
+        # Ring 6 outbound: buffer a small HTML body (or just read the headers of a redirect),
+        # inspect it, and replace a bad response with 502 rather than pass it on.
+        buffered = await self._maybe_buffer(upstream, status)
+        if buffered is not None:
+            finding = self.inspect_response(ctx, status, upstream.headers, buffered)
+            if finding and not self.monitoring(ctx):
+                await upstream.aclose()
+                self.emit("blocked", ctx, finding.status, 6, category=finding.category,
+                          rule=finding.rule)  # fmt: skip
+                return self.with_security(PlainTextResponse("Bad Gateway", finding.status))
+            if finding:
+                self.emit("blocked", ctx, finding.status, 6, category=finding.category,
+                          rule=finding.rule, **{"hedwig.monitor": True})  # fmt: skip
+
         action, ring, extra = "allowed", "centre", {}
         delay = 0.0
         try:
@@ -558,6 +642,17 @@ class Guard:
         if result and result.trip:
             self.stop_response_after(ctx, result.trip)
 
+        if buffered is not None:
+            await upstream.aclose()
+            response = Response(buffered, status_code=status)
+            headers = [
+                (k.lower().encode("latin-1"), v.encode("latin-1"))
+                for k, v in upstream.headers.multi_items()
+                if k.lower() not in HOP_BY_HOP and k.lower() != "content-length"
+            ]
+            response.raw_headers = headers + [(b"content-length", str(len(buffered)).encode())]
+            return self.with_security(response)
+
         # raw bytes pass through still encoded, so the upstream content-length stays valid
         response = StreamingResponse(
             upstream.aiter_raw(), status_code=status, background=BackgroundTask(upstream.aclose)
@@ -568,6 +663,21 @@ class Guard:
             if k.lower() not in HOP_BY_HOP
         ]
         return self.with_security(response)
+
+    async def _maybe_buffer(self, upstream: httpx.Response, status: int) -> bytes | None:
+        """Read the body into memory when ring 6 should inspect it: a small, unencoded HTML
+        response, or a redirect (whose Location is inspected without a body). Else None: the
+        response streams through untouched."""
+        headers = upstream.headers
+        ctype = headers.get("content-type", "").lower()
+        declared = headers.get("content-length", "")
+        too_big = declared.isdigit() and int(declared) > self.config.max_response_scan
+        html = "html" in ctype and not headers.get("content-encoding") and not too_big
+        if html:
+            return (await upstream.aread())[: self.config.max_response_scan]
+        if 300 <= status < 400:
+            return b""  # no body needed; inspect_response reads the Location header
+        return None
 
     def stop_response_after(self, ctx: rings.Ctx, stop: rings.Stop) -> None:
         """A decision made after the answer went out (a brute-force trip): record and apply it."""
