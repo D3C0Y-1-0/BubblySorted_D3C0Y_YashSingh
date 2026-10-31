@@ -31,3 +31,5 @@ with that many zero bits and `POST /__hedwig/challenge` `{"token", "nonce"}` to 
 bound to your IP (`chakravyuha.challenge.solve` does it in Python). A service with
 `challenge: false` skips the puzzle and needs `X-API-Key` (or a bearer token) matching the
 environment variable named by its `api_key_env`.
+
+Malware and ransomware demo: `uv run --project guard python guard/tools/attacks/malware.py` sends harmless stand-ins through `POST /support/attachments`; ring 6 traps the attacker, the decoy answers, and using the planted API key bans it and emails the PM.

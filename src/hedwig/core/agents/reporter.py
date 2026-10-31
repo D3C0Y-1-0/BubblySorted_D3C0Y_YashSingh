@@ -26,4 +26,4 @@ def write(root: Path, finding: Finding, run: Run, diff_stat: str, checks: list[s
         f"Diff summary:\n{diff_stat}\n\nChecks:\n- " + "\n- ".join(checks) + "\n\n"
         "Answer with the JSON object."
     )
-    return llm.chat(root, "reporter", prompt("reporter"), user, Text)
+    return llm.chat(root, "reporter", prompt("reporter"), user, Text, max_tokens=700)

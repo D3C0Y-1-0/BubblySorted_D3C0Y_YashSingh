@@ -54,11 +54,12 @@ def test_estate_tiers_and_allow_match_the_plan():
     config = yaml.safe_load((BANK / ".hedwig.yml").read_text(encoding="utf-8"))
     services = config["services"]
     assert set(services) == set(SERVICES)
+    demo = {"open_fix_pr", "auto_merge_if_verified", "rollback", "takedown"}  # the demo policy
     expected = {
-        "transaction": ("critical", {"open_fix_pr", "auto_merge_if_verified", "rollback"}),
-        "account": ("high", {"open_fix_pr"}),
-        "support": ("medium", {"open_fix_pr"}),
-        "notifications": ("low", {"open_fix_pr", "auto_merge_if_verified", "takedown"}),
+        "transaction": ("critical", demo),
+        "account": ("high", demo),
+        "support": ("medium", demo),
+        "notifications": ("low", demo),
     }
     for name, (tier, allow) in expected.items():
         assert services[name]["tier"] == tier, f"{name} tier"

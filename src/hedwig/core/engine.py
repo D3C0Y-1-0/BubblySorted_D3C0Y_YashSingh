@@ -11,10 +11,18 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from hedwig import config
-from hedwig.core import evidence, inventory, policy, reachability, score, versions
+from hedwig.core import (
+    evidence,
+    inventory,
+    policy,
+    reachability,
+    score,
+    supplychain,
+    versions,
+)
 from hedwig.core.advisories import AdvisorySource, affected_entries, norm_name
 from hedwig.core.code_index import CodeIndex, hinted_symbols
-from hedwig.core.models import Finding, Package, ScanResult, ServiceInfo
+from hedwig.core.models import Factors, Finding, Package, ScanResult, ServiceInfo
 
 GIT_URL = re.compile(r"^(https?://|git@|ssh://)|\.git$")
 LAST_SCAN = Path(".hedwig") / "last-scan.json"
@@ -141,6 +149,7 @@ def _draft(group: list[dict], package: Package) -> dict:
         "cves": cves,
         "summary": summary,
         "severity": severity,
+        "malicious": supplychain.is_malicious(group, summary),
         "fixed": _fixed_version(group, package),
         "symbols": reachability.advisory_symbols(group, lambda r: affected_entries(r, package)),
     }
@@ -205,6 +214,9 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
             )
             tier_name = spec.tier
             factors, risk, severity = score.score(d["severity"], tier_name, level, is_kev, top_epss)
+            malicious = d["malicious"]
+            if malicious:  # malware outranks any CVSS: it is hostile code, not a mistake
+                risk, severity = max(risk, 0.6), "critical"
             findings.append(
                 Finding(
                     id=d["id"],
@@ -231,10 +243,12 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
                     attacks=attacks,
                     compromise=log.compromise,
                     decision=policy.decide(level, spec.allow),
+                    kind="malicious-package" if malicious else "vulnerability",
                     factors=factors,
                     risk=risk,
                     severity=severity,
-                    reasoning=score.reasoning(
+                    reasoning=("Known malicious package. " if malicious else "")
+                    + score.reasoning(
                         d["severity"],
                         severity,
                         tier_name,
@@ -246,6 +260,8 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
                     ),
                 )
             )
+    for spec in services:
+        findings += _heuristic_findings(spec)
     findings.sort(key=lambda f: (-f.risk, f.service, f.id))
     for index in indexes.values():
         warnings += index.warnings
@@ -262,6 +278,62 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
     if save:
         save_last(root, result)
     return result
+
+
+def _heuristic_findings(spec: ServiceSpec) -> list[Finding]:
+    """Typosquats and dropper-like install scripts: worth a human look, never auto-fixed."""
+    flags = [
+        (
+            "typosquat",
+            f"HEDWIG-TYPOSQUAT-{name}",
+            name,
+            f"{name} is one letter away from the popular package {real}: a possible typosquat",
+        )
+        for name, real in supplychain.typosquats(spec.folder)
+    ] + [
+        (
+            "install-script",
+            f"HEDWIG-SCRIPT-{script}",
+            script,
+            f"the {script} script looks like a dropper: {command[:80]}",
+        )
+        for script, command in supplychain.install_script_droppers(spec.folder)
+    ]
+    ecosystem = "PyPI" if (spec.folder / "requirements.txt").is_file() else "npm"
+    manifest = "requirements.txt" if ecosystem == "PyPI" else "package.json"
+    found = []
+    for kind, flag_id, package, summary in flags:
+        criticality = score.CRITICALITY.get(spec.tier, 0.5)
+        factors = Factors(exploitability=0.6, impact=0.8, criticality=criticality, confidence=0.5)
+        risk = round(factors.exploitability * factors.impact * criticality * factors.confidence, 3)
+        found.append(
+            Finding(
+                id=flag_id,
+                ids=[flag_id],
+                cves=[],
+                summary=summary,
+                service=spec.name,
+                tier=spec.tier,
+                ecosystem=ecosystem,
+                package=package,
+                version="",
+                manifest=manifest,
+                fixed_version=None,
+                package_fix=None,
+                needs_major=False,
+                kev=False,
+                epss=None,
+                evidence_level=0,
+                reachability="imported",
+                decision=policy.decide(0, spec.allow),
+                kind=kind,
+                factors=factors,
+                risk=risk,
+                severity="critical" if kind == "install-script" else "high",
+                reasoning=f"Heuristic: {summary}. Review before merging; Hedwig does not fix this.",
+            )
+        )
+    return found
 
 
 def _evidence_notes(reach: reachability.Reach, attacks: list[str], compromise: bool) -> list[str]:

@@ -115,3 +115,30 @@ def test_without_smtp_configured_it_only_logs():
     pm.on_event(blocked())
     pm.poll()
     assert any("would email PM" in line for line in logged)
+
+
+def test_the_digest_names_each_attacker_with_trap_and_ban_times():
+    outbox, clock = Outbox(), Clock()
+    pm = notifier(outbox, clock)
+    ip = "127.0.0.6"
+    trapped = {
+        "event.action": "trapped", "source.ip": ip, "service": "support",
+        "url.path": "/attachments", "rule": "ransomware-command", "event.category": "malware",
+        "@timestamp": "2026-11-01T10:00:02+00:00",
+    }  # fmt: skip
+    pm.on_event(trapped)
+    for _ in range(3):
+        pm.on_event({**trapped, "@timestamp": "2026-11-01T10:00:05+00:00", "hedwig.decoy": True})
+    pm.on_event({
+        "event.action": "banned", "source.ip": ip, "rule": "honeytoken-api_key",
+        "event.category": "honeytoken", "@timestamp": "2026-11-01T10:00:09+00:00",
+        "hedwig.ban_minutes": 60,
+    })  # fmt: skip
+    clock.t = 31
+    assert pm.poll()
+    assert outbox.done.wait(2)
+    body = outbox.sent[0][1]
+    assert ip in body and "support /attachments" in body
+    assert "trapped in the decoy bank at 10:00:02" in body
+    assert "banned at 10:00:09 until 11:00:09 UTC (honeytoken-api_key)" in body
+    assert "the decoy answered 3" in body

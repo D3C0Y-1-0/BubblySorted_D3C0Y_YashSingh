@@ -18,7 +18,7 @@ Decisions on top of the team plan:
 11. **Replay is dropped.** The compromise demo is a PR that adds a vulnerable dependency: the bot comments on it when asked, and if it is merged anyway, Hedwig takes the service down, fixes it, brings it up and reports to the PM.
 12. **A web dashboard comes later** from the teammate. Until then the dashboard is the terminal `/dash`.
 13. **The teammate's bank and Guard are in the repo** (`guard/bank/` and `guard/`, see `guard/chakravyuhaPLAN.md`). From now on **both tracks may edit both areas**, with small commits and a `git fetch` first.
-14. **Three final use cases** decide what is built (see "Final use cases" below).
+14. **Three final use cases** decide what is built (see "Final use cases" below). The second changed from a DDoS demo to malware and ransomware prevention.
 
 Cut to avoid overengineering:
 - NVD and the GitHub Advisory DB: OSV already carries CVSS.
@@ -275,8 +275,10 @@ The bank is `guard/bank/` (transaction/Java, account/Rust, support/PHP, notifica
 - A PR is opened whenever the bump itself is real (the manifest declares the target version and the lockfile tool succeeded), **even if black-box verification failed or could not run**. A verified fix opens a normal PR labelled `hedwig:needs-review`; an unverified one opens a **draft** PR labelled `hedwig:unverified` (verification could not run) or `hedwig:verification-failed` (it ran and failed), with the reason in the body.
 - No PR when there is nothing to publish: transitive dependency, no fixed version, or the lockfile tool failed.
 
-**UC2: a simulated DDoS on the bank login page ends in a PM report.** A flood script hits `POST /transaction/login` through the Guard. The Guard rate-limits it, **traps the attacker in the decoy bank** and then **bans** it, and the PM receives the Guard's digest saying exactly that, with timestamps.
-- The report is the Guard's own digest (no PDF), improved so it names each attacker: IP, first seen, trapped at, banned until, requests stopped, requests the decoy absorbed, and any honeytoken use.
+**UC2: malware and ransomware injection is prevented and reported.** (Changed from a DDoS demo.) Two ways in are covered.
+- **Through the network:** an attacker uploads or posts malware and ransomware through the bank (the support ticket attachment route, `POST /support/attachments`). The Guard's ring 6 catches it (test virus, webshell, executables, ransomware commands, ransom notes, `.locked`-style files, archives holding executables, macro documents), draws the attacker into the decoy bank, which says "stored" to everything, and bans it when it uses a planted honeytoken. The PM gets the Guard's email, which names each attacker with UTC timestamps for first seen, trapped, banned and until when.
+- **Through the dependencies:** a PR that adds a known malicious package (OSV `MAL-` and "malware" advisories) is flagged by the bot as MALWARE, and if merged anyway the UC3 response runs: the service goes down and the package is **removed** (not bumped) when nothing uses it. Typosquats and dropper-like install scripts are reported for a human and never auto-fixed.
+- Everything is simulated with harmless stand-ins (the EICAR test string, text that only looks like a ransom note).
 
 **UC3: a vulnerable PR merged into the bank gets contained.** One PR per bank service, each adding a known-vulnerable dependency. On any PR a person can write `/hedwig scan` in a comment and the bot replies with the findings the PR introduces. If a PR is merged anyway (called or not), `hedwig watch` notices on its own and, autonomously: takes that service down, makes the minimal fix, brings it up again, and emails the PM a PDF with an incident timeline in UTC timestamps.
 - Timeline rows: PR merged, detected, service taken down, fix started, fix verified, fix merged into local `main`, image rebuilt, service healthy again, report sent, and the downtime.
@@ -316,7 +318,7 @@ The bank is `guard/bank/` (transaction/Java, account/Rust, support/PHP, notifica
 - `hedwig down transaction` stops the container and the `/dash` tile turns down within 3 s; `hedwig up transaction` restores it.
 - A verified fix with `auto_merge_if_verified` merges into local `main`, rebuilds, passes smoke and the tile stays active; a deliberately broken fix triggers the rollback.
 
-## Phase 7: PR bot, forced-merge response and incident report (UC3)
+## Phase 7: PR bot, forced-merge response and incident report (UC3) (built, workflow not yet run on GitHub)
 GitHub work uses the built-in `GITHUB_TOKEN` in the workflow and the logged-in `gh` on the laptop. No GitHub App, no self-hosted runner.
 - **`hedwig pr-check [--base REF] [--root DIR] [--fail-on high] [--comment-file F]`** (`cli/pr_cmd.py`): scans the PR head and the base (in a temporary `git worktree`) and keeps only the findings the PR **introduces**, per service. It writes a markdown comment (package, advisory, severity, risk, reachability, suggested fix) and exits non-zero at or above `--fail-on`.
 - **`.github/workflows/hedwig-pr.yml`: comment-triggered.** Runs on `issue_comment` (created) when the comment is on a PR and starts with `/hedwig scan`. It checks out the PR's merge ref, installs Hedwig from the latest release the way `install.sh` does, runs `pr-check --root guard/bank`, and posts or updates one comment. The workflow file must be on `main` first, because `issue_comment` workflows always run from the default branch. Optionally a `hedwig` check run is created so the result is visible on the PR.
@@ -335,23 +337,37 @@ GitHub work uses the built-in `GITHUB_TOKEN` in the workflow and the logged-in `
 - Commenting `/hedwig scan` on a demo PR makes the bot post the introduced findings within about a minute.
 - Merging a demo PR makes `hedwig watch` take that service down, publish a fix PR, rebuild and bring it back up without help, and email the PM a PDF whose timeline has every row above. Run once per service (four PRs).
 
-## Phase 8: DDoS use case, bank integration and the rest (UC2)
-- **`guard/tools/attacks/flood.py`:** a request flood on `POST /transaction/login` from one loopback address (`--ip`, default `127.0.0.7`, `--n`, `--concurrency`). It solves the Guard's challenge once like the other scripts, so the flood reaches the flood ring.
-- **Guard behaviour to verify, and adjust if needed:** the flood is rate-limited, the attacker's suspicion reaches the trap threshold so the **decoy absorbs it**, and it is **banned** at the repeat-offender limit. The order and the events (`trapped`, then `banned`) must be visible on the Guard dashboard and in the digest.
-- **Digest improvement (`guard/src/chakravyuha/notifier.py`):** today the digest only has counts, the Commander's summary and a Kibana link. Add an attackers section: per IP the first-seen time, when it was trapped, when it was banned and until when, requests stopped, requests the decoy served, honeytoken use, and the targeted service and path. All timestamps in UTC.
-- **Done when:** running the flood script produces one PM email whose attackers section shows the flooding IP as trapped, then banned, with timestamps, and the Guard dashboard shows the same.
+## Phase 8: Malware and ransomware prevention, bank integration and the rest (UC2) (built)
+**Through the network (the Guard, `guard/`):**
+- **Ring 6 learns ransomware and malware:** request text is checked for ransomware commands (`vssadmin delete shadows`, `bcdedit` recovery off, `wbadmin`, `cipher /w`), ransom-note text, droppers (curl-pipe-sh, encoded PowerShell, `certutil -urlcache`) and reverse shells. Uploads are taken apart (multipart parts and JSON file names): ransomware file extensions, executable file names, zip archives that hold an executable, macro documents, plus the existing EICAR, webshell, executable and blocklisted-hash checks. A service may list the file types it accepts; anything else is refused with 415. Malware is trapped (the decoy answers), not just blocked.
+- **A real upload route in the bank:** `POST /support/attachments` on the support service accepts png, jpg, jpeg, pdf and txt up to 1 MB, keeps nothing, and returns the ticket and a hash. The Guard config lists the route and the allowed types, and the decoy bank answers the same route with "stored".
+- **The PM digest names each attacker:** per source IP, the target, when it was first seen, trapped in the decoy and banned (with the until time), the requests stopped, the requests the decoy answered, and the rules that caught it, all in UTC. The honeytoken email includes the same lines.
+- **Demo:** `guard/tools/attacks/malware.py` plays the attacker: seven harmless stand-ins through the attachment route, then the planted API key from the decoy, ending in a ban and an email.
+- **Done when:** (run) all seven samples are caught by ring 6 and answered by the decoy, using the planted key is banned, and the PM receives the honeytoken email and the digest with the attackers section.
+
+**Through the dependencies (Hedwig, `src/hedwig/core/supplychain.py`):**
+- A finding whose advisory says the package is malware (OSV `MAL-` ids, "malware", "malicious code", and so on) is marked `kind: malicious-package` and scored critical whatever its CVSS.
+- If no code imports it, the fix is to **remove** the package, not to bump it: the manifest entry is deleted, the lockfile regenerated by the tool, and the same checks and Verifier (told the task) run. If the code uses it, Hedwig stops and a person must replace it.
+- Heuristics, reported only (`typosquat`, `install-script`): a direct dependency one letter from a very popular package, and a `preinstall` or `postinstall` that downloads and runs code. They show in scans, the dashboard and the PR comment, and they never take a service down or get fixed automatically.
+- The PR bot comment flags malware with a MALWARE banner. `tools/demo_prs.py create malware` opens a PR adding a known malicious release (ua-parser-js 0.7.29).
+- **Done when:** (run) `pr-check` flags that PR as malicious; `hedwig fix` removes the package, passes the checks and merges.
+
+**Also changed:**
+- Agent calls state a token cap and retry on Groq's per-minute limits (this org's tier refuses a request that does not).
+- The old-vs-new comparison no longer fails when only the old (merged) build cannot be built, as happens when a malicious release has been pulled from the registry; the new build must still come up healthy.
 - **Bank integration:** the expected outcomes are the three use cases plus these rows:
 
 | Check | Expected |
 |---|---|
 | `hedwig scan guard/bank --json` | All seeded CVEs found, each with reasoning |
 | UC1 on a fresh repo | `/fix` ends with PRs on GitHub, draft when unverified |
-| UC2 flood | Trapped in the decoy, banned, digest to the PM with timestamps |
+| UC2 `malware.py` | Caught at ring 6, trapped in the decoy, banned on honeytoken use, PM email naming the attacker with timestamps |
+| UC2 malicious-package PR | MALWARE banner on the PR; if merged, service down, package removed, up again, PDF with timeline |
 | UC3 merged vulnerable PR (each service) | Service taken down, fix PR, rebuilt, up again, PDF with timeline |
 | `hedwig dash` | Architecture with live status, reports and incidents, attacks, expandable call sites |
 
 - **Claude Code plugin** (optional, last): an MCP server wrapping `hedwig ... --json` with `scan`, `status`, `explain` and `propose_fix`, the `/hedwig:*` commands, a skill and a hook that warns on vulnerable manifest edits.
-- **Not built:** Render deployment, the GitHub App, a self-hosted runner. The web dashboard is the teammate's, later.
+- **Not built:** Render deployment, the GitHub App, a self-hosted runner, a DDoS demo script (the Guard's flood ring exists and is the teammate's), host-side ransomware canary files. The web dashboard is the teammate's, later.
 
 ---
 

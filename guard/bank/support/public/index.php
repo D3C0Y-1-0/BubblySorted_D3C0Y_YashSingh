@@ -20,7 +20,14 @@ $routes = [
     '/reply-preview' => fn () => Tickets::replyPreview(),
 ];
 
-if ($method === 'GET' && isset($routes[$path])) {
+if ($method === 'POST' && $path === '/attachments') {
+    $upload = $_FILES['file'] ?? null;
+    $name = $upload['name'] ?? ($_SERVER['HTTP_X_FILENAME'] ?? '');
+    $content = $upload && is_uploaded_file($upload['tmp_name'])
+        ? (string) file_get_contents($upload['tmp_name'])
+        : (string) file_get_contents('php://input');
+    [$status, $body] = Tickets::attach((string) $name, $content);
+} elseif ($method === 'GET' && isset($routes[$path])) {
     $status = 200;
     $body = $routes[$path]();
 } else {

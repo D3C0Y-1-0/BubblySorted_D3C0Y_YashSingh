@@ -27,3 +27,24 @@ def decide(evidence_level: int, allow: list[str]) -> Decision:
         on_verified=verified,
         on_failed=failed,
     )
+
+
+def decide_incident(allow: list[str]) -> Decision:
+    """What to do when a pull request that introduced vulnerable packages was merged anyway.
+
+    Takedown first when the service allows it, then the normal fixing flow runs on each package.
+    """
+    if "takedown" in allow:
+        return Decision(
+            action="takedown",
+            reason="vulnerable code was merged and takedown is allowed",
+        )
+    if "open_fix_pr" in allow:
+        return Decision(
+            action="fix",
+            reason="vulnerable code was merged; the service stays up and is fixed",
+        )
+    return Decision(
+        action="notify",
+        reason="vulnerable code was merged and Hedwig may not act, so the PM is notified",
+    )

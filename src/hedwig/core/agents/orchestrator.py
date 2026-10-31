@@ -132,6 +132,17 @@ def run_fix(
 
     step = pipe.begin("plan")
     target = top.package_fix
+    removal = False
+    if top.kind == "malicious-package" and top.reachability == "not imported":
+        # nothing uses the malware, so remove it rather than trust another release of it
+        target, removal = "removed", True
+        run.to_version = "removed"
+    elif top.kind == "malicious-package" and not target:
+        pipe.end(
+            step, "skipped",
+            f"{top.package} is malware and the code uses it; a person must replace it",
+        )  # fmt: skip
+        return _finish(root, run, "skipped", "notify")
     if not target:
         pipe.end(
             step, "skipped", "no fixed version exists; isolate the service or drop the package"
@@ -172,14 +183,17 @@ def run_fix(
         base_folder = base_wt / relative
         verified, failures = _attempts(
             pipe, root, spec, findings, source, target, allowed, code_files,
-            repo, relative, new_wt, new_folder, base_folder,
+            repo, relative, new_wt, new_folder, base_folder, removal,
         )  # fmt: skip
         diff = runner.diff_text(new_wt, relative)
         stat = runner.diff_stat(new_wt, relative)
         runs.write_artifact(root, run.run_id, "diff.patch", diff)
         changed = _changed_paths(new_wt, relative)
         if changed:
-            runner.commit(new_wt, changed, f"[fix] {top.package} {top.version} -> {target}")
+            what = (
+                f"remove {top.package}" if removal else f"{top.package} {top.version} -> {target}"
+            )
+            runner.commit(new_wt, changed, f"[fix] {what}")
     except (RuntimeError, OSError) as err:
         step = pipe.begin("run")
         pipe.end(step, "failed", str(err))
@@ -351,8 +365,9 @@ def _append_location(root: Path, run: Run, summary: str) -> None:
 
 
 def _changed_paths(worktree: Path, relative: str) -> list[str]:
-    out = runner.git(worktree, "status", "--porcelain", "-uall", "--", relative).stdout
-    return [line[3:].strip().strip('"') for line in out.splitlines() if line.strip()]
+    """Tracked files changed in the fix. Files the tests created (caches, builds) are not."""
+    out = runner.git(worktree, "diff", "--name-only", "--", relative).stdout
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def _attempts(
@@ -369,6 +384,7 @@ def _attempts(
     new_wt: Path,
     new_folder: Path,
     base_folder: Path,
+    removal: bool = False,
 ) -> tuple[bool, list[str]]:
     run, top = pipe.run, findings[0]
     failures: list[str] = []
@@ -381,7 +397,14 @@ def _attempts(
         if attempt:
             runner.reset_service(repo, new_wt, relative)
         step = pipe.begin("plan", f"attempt {attempt + 1}: bump {top.package} to {target}")
-        error = bump.apply(new_folder, top, target) or bump.regenerate_lock(new_folder, top, target)
+        if removal:
+            error = bump.remove(new_folder, top) or bump.regenerate_lock(
+                new_folder, top, target, removal=True
+            )
+        else:
+            error = bump.apply(new_folder, top, target) or bump.regenerate_lock(
+                new_folder, top, target
+            )
         if error:
             pipe.end(step, "failed", error)
             run.failed_step = "plan"
@@ -409,7 +432,7 @@ def _attempts(
                     continue
             pipe.end(step, "ok", f"{len(proposal.edits)} edit(s): {proposal.rationale}")
 
-        violations = guards.check_result(base_folder, new_folder, top, target, allowed)
+        violations = guards.check_result(base_folder, new_folder, top, target, allowed, removal)
         if violations:
             step = pipe.begin("checks")
             pipe.end(step, "failed", "; ".join(violations))
@@ -459,7 +482,12 @@ def _attempts(
         step = pipe.begin("verifier")
         diff = runner.diff_text(new_wt, relative, _reviewable(new_wt, relative))
         try:
-            review = verifier.review(root, diff, [c.line() for c in checks])
+            task = (
+                f"remove the known-malicious package {top.package} (the code does not use it)"
+                if removal
+                else f"bump {top.package} from {top.version} to {target}"
+            )
+            review = verifier.review(root, diff, [c.line() for c in checks], task)
         except AgentError as err:
             pipe.end(step, "failed", str(err))
             failures, run.failed_step = [str(err)], "verifier"

@@ -58,6 +58,7 @@ class Finding(BaseModel):
     attacks: list[str] = Field(default_factory=list)  # attack patterns seen in the service logs
     compromise: bool = False  # a compromise marker was seen in the service logs
     decision: Decision
+    kind: str = "vulnerability"  # vulnerability | malicious-package | typosquat | install-script
     factors: Factors
     risk: float
     severity: str  # critical | high | medium | low
@@ -119,3 +120,26 @@ class Run(BaseModel):
     steps: list[Step] = Field(default_factory=list)
     started_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     finished_at: str = ""
+
+
+class TimelineEvent(BaseModel):
+    at: str  # UTC, ISO 8601
+    event: str
+    detail: str = ""
+
+
+class Incident(BaseModel):
+    """A vulnerable change that was merged, and what Hedwig did about it. Saved as JSON."""
+
+    incident_id: str
+    service: str
+    pr_number: int
+    pr_url: str = ""
+    pr_title: str = ""
+    merged_by: str = ""
+    findings: list[Finding] = Field(default_factory=list)  # what the PR introduced
+    run_ids: list[str] = Field(default_factory=list)  # the fix runs
+    state: str = "running"  # running | contained (back up) | down (still down) | failed
+    timeline: list[TimelineEvent] = Field(default_factory=list)
+    downtime_seconds: float | None = None
+    report: str = ""  # what happened to the PM report

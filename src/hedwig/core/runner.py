@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -347,10 +347,22 @@ def differential(
     dropped = 0
     mismatches: list[str] = []
     try:
-        with (
-            container(old_dir, f"{run_id}-old", port) as old,
-            container(new_dir, f"{run_id}-new", port) as new,
-        ):
+        with ExitStack() as stack:
+            try:
+                old = stack.enter_context(container(old_dir, f"{run_id}-old", port))
+            except RuntimeError as err:
+                old, old_error = None, str(err)
+            new = stack.enter_context(container(new_dir, f"{run_id}-new", port))
+            if old is None:
+                # The merged code may not build any more (for example a malicious package was
+                # pulled from the registry). Nothing to compare with, so the new build alone
+                # has to come up healthy.
+                if not wait_healthy(new, health):
+                    return Check("differential", False, "the new build never became healthy"), []
+                note = (
+                    f"the old build could not be built ({old_error[:100]}); the new one is healthy"
+                )
+                return Check("differential", True, note), []
             for label, base in (("old", old), ("new", new)):
                 if not wait_healthy(base, health):
                     return Check(

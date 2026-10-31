@@ -21,4 +21,20 @@ final class TicketsTest extends TestCase
         $this->assertStringContainsString('PHPMailer 6.4.1', $preview['library']);
         $this->assertNotEmpty($preview['mime_prefix']);
     }
+
+    public function testAnAllowedAttachmentIsAcceptedAndKeptNowhere(): void
+    {
+        [$status, $body] = Tickets::attach('receipt.png', 'png bytes');
+        $this->assertSame(201, $status);
+        $this->assertFalse($body['stored']);
+        $this->assertSame(hash('sha256', 'png bytes'), $body['sha256']);
+    }
+
+    public function testOtherFileTypesAreRefused(): void
+    {
+        [$status] = Tickets::attach('payload.exe', 'x');
+        $this->assertSame(415, $status);
+        [$status] = Tickets::attach('invoice.locked', 'x');
+        $this->assertSame(415, $status);
+    }
 }

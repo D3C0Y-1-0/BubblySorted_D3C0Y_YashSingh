@@ -1,0 +1,62 @@
+name: hedwig-pr
+
+# Comment `/hedwig scan` on a pull request and the bot replies with the vulnerabilities the
+# pull request introduces. issue_comment workflows always run from the default branch, so this
+# file only takes effect once it is on main.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+jobs:
+  scan:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/hedwig scan')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install the latest Hedwig release
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.whl' --dir /tmp/hedwig
+          uv tool install --force /tmp/hedwig/*.whl
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch the pull request
+        id: refs
+        run: |
+          read -r BASE HEAD < <(gh pr view "$PR" --json baseRefOid,headRefOid -q '"\(.baseRefOid) \(.headRefOid)"')
+          git fetch origin "pull/$PR/head"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+
+      - name: Scan what the pull request introduces
+        id: scan
+        run: |
+          set +e
+          hedwig pr-check --base "${{ steps.refs.outputs.base }}" --head "${{ steps.refs.outputs.head }}" \
+            --pr "PR #$PR" --fail-on high --comment-file comment.md
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on the pull request
+        run: |
+          gh pr comment "$PR" --body-file comment.md --edit-last --create-if-none \
+            || gh pr comment "$PR" --body-file comment.md
+
+      - name: Set the hedwig status on the pull request
+        run: |
+          if [ "${{ steps.scan.outputs.code }}" = "0" ]; then STATE=success; DESC="no new vulnerable packages";
+          else STATE=failure; DESC="introduces vulnerable packages"; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/${{ steps.refs.outputs.head }}" \
+            -f state="$STATE" -f context=hedwig -f description="$DESC"

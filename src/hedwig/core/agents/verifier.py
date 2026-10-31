@@ -15,9 +15,12 @@ class Review(BaseModel):
     violations: list[str] = []
 
 
-def review(root: Path, diff: str, checks: list[str]) -> Review:
+def review(root: Path, diff: str, checks: list[str], task: str = "") -> Review:
     user = (
-        "Automated checks:\n- " + "\n- ".join(checks) + "\n\n"
+        (f"The task was: {task}\n\n" if task else "")
+        + "Automated checks:\n- "
+        + "\n- ".join(checks)
+        + "\n\n"
         f"Diff:\n{diff[:MAX_DIFF_CHARS]}\n\nAnswer with the JSON object."
     )
-    return llm.chat(root, "verifier", prompt("verifier"), user, Review)
+    return llm.chat(root, "verifier", prompt("verifier"), user, Review, max_tokens=300)

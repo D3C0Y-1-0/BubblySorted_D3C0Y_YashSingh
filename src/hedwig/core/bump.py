@@ -136,6 +136,39 @@ def apply(folder: Path, finding: Finding, target: str) -> str | None:
     return None if declared(folder, finding) else f"could not rewrite {path.name}"
 
 
+def remove(folder: Path, finding: Finding) -> str | None:
+    """Delete the package's declaration from the manifest. Returns an error, or None."""
+    path = folder / manifest_for(finding)
+    if declared(folder, finding) is None:
+        return f"{finding.package} is not declared in {path.name}"
+    text = path.read_text(encoding="utf-8")
+    name = re.escape(finding.package)
+    if finding.ecosystem == "Maven":
+        found = _maven_block(finding, text)
+        block = found[0]
+        text = text[: block.start()].rstrip(" \t") + text[block.end() :].lstrip(" \t").lstrip("\n")
+    elif finding.ecosystem in ("npm", "Packagist"):
+        line = re.compile(rf'^[ \t]*"{name}"\s*:\s*"[^"]*"\s*,?[ \t]*\n', re.M | re.I)
+        text = line.sub("", text, count=1)
+        text = re.sub(r",(\s*\n\s*\})", r"\1", text)  # a comma left behind by the last entry
+        try:
+            json.loads(text)
+        except json.JSONDecodeError:
+            return f"removing {finding.package} would break {path.name}"
+    elif finding.ecosystem == "PyPI":
+        line = re.compile(
+            rf"^[ \t]*{_flexible(finding.package)}(?:\[[^\]]*\])?\s*==.*\n?", re.M | re.I
+        )
+        text = line.sub("", text, count=1)
+    elif finding.ecosystem == "crates.io":
+        line = re.compile(rf"^[ \t]*{name}\s*=.*\n", re.M)
+        text = line.sub("", text, count=1)
+    else:
+        return f"cannot remove a {finding.ecosystem} package"
+    path.write_text(text, encoding="utf-8")
+    return None if declared(folder, finding) is None else f"could not remove it from {path.name}"
+
+
 def _run(command: list[str], folder: Path) -> str | None:
     if not shutil.which(command[0]):
         return f"{command[0]} is not installed, so the lockfile cannot be updated"
@@ -150,12 +183,16 @@ def _run(command: list[str], folder: Path) -> str | None:
     return None
 
 
-def regenerate_lock(folder: Path, finding: Finding, target: str) -> str | None:
+def regenerate_lock(
+    folder: Path, finding: Finding, target: str, removal: bool = False
+) -> str | None:
     """Let the package tool rewrite the lockfile. Never done by the LLM."""
     if finding.manifest not in LOCKFILES:
         return None  # Maven and requirements.txt have no lockfile
     name = finding.package
-    if finding.ecosystem == "npm":
+    if removal and finding.ecosystem == "crates.io":
+        command = ["cargo", "metadata", "--format-version", "1"]  # rewrites the lock without it
+    elif finding.ecosystem == "npm":
         command = [
             "npm",
             "install",

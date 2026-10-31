@@ -49,6 +49,8 @@ services:
       - GET /health
       - GET /tickets
       - GET /reply-preview
+      - POST /attachments
+    uploads: [png, jpg, jpeg, pdf, txt]
   notifications:
     upstream: http://127.0.0.1:9104
     rate: 20

@@ -78,14 +78,17 @@ def _is_dependency_file(path: str) -> bool:
 
 
 def check_result(
-    base: Path, new: Path, finding: Finding, target: str, allowed: list[str]
+    base: Path, new: Path, finding: Finding, target: str, allowed: list[str], removal: bool = False
 ) -> list[str]:
     """Compare the fix worktree with the base one and return every rule that was broken."""
     violations: list[str] = []
     manifest = bump.manifest_for(finding)
 
     spec = bump.declared(new, finding)
-    if spec is None or spec.lstrip("^~=") != target:
+    if removal:
+        if spec is not None:
+            violations.append(f"{manifest} must no longer declare {finding.package}")
+    elif spec is None or spec.lstrip("^~=") != target:
         violations.append(f"{manifest} must declare {finding.package} {target}, found {spec}")
 
     for name in DEPENDENCY_FILES:

@@ -73,6 +73,33 @@ use (the first report needs internet). `--email` sends it to `pm_email` and need
 
 Run the install command again to update. The repo must be public for these links to work.
 
+### Catching a vulnerable merge
+
+- **The bot:** comment `/hedwig scan` on a pull request and the `hedwig-pr` workflow replies with the
+  vulnerabilities the PR introduces and sets a `hedwig` status on it. It runs from the default
+  branch, so the workflow file has to be merged into `main` first. `hedwig pr-check` does the same
+  scan by hand.
+- **The watcher:** `hedwig watch` (run it in the folder with `.hedwig.yml`) checks every PR merged
+  into the project, whether or not the bot was asked. If a PR introduced vulnerable packages it
+  takes the affected service down (`docker compose stop`, when the service allows `takedown`),
+  fixes it with the minimal change, opens the fix PR, merges it into your local `main`, rebuilds
+  and restarts the service, and emails the PM a PDF with a UTC timeline. If your local checkout
+  cannot take the merged code (a conflict, a different branch) it stops, takes nothing down and
+  says so in the report.
+- **Demo:** `uv run python tools/demo_prs.py create` opens one PR per bank service, each adding a
+  package with a known advisory; `clean` removes them.
+
+### Malware and ransomware
+
+- **Through the bank (the Guard):** uploads and request bodies are inspected for malware and ransomware
+  (test virus, webshells, executables, ransomware commands, ransom notes, `.locked`-style files,
+  zips holding executables, macro documents). The attacker is drawn into the decoy bank and the PM
+  gets an email naming each attacker with UTC timestamps. Try it with
+  `uv run --project guard python guard/tools/attacks/malware.py` (harmless stand-ins only).
+- **Through the dependencies:** a known malicious package is flagged critical in scans and in the PR
+  bot's comment. If nothing uses it, `hedwig fix` removes it instead of bumping it. Possible
+  typosquats and dropper-like install scripts are reported for a human.
+
 ## Releasing
 
 Bump `version` in `pyproject.toml`, merge `main` into `release` and push. The `release` workflow

@@ -126,6 +126,29 @@ def default_dataset(seed: int = 7) -> dict[str, Any]:
                     "POST /transfer": {"handler": "transfer"},
                 }
             },
+            "support": {
+                "routes": {
+                    "GET /": {"body": {"service": "support"}},
+                    "GET /health": {"body": {"status": "ok"}},
+                    "GET /tickets": {
+                        "body": {
+                            "tickets": [
+                                {
+                                    "id": 4001,
+                                    "subject": "Card not working abroad",
+                                    "status": "open",
+                                },
+                                {"id": 4003, "subject": "Dispute a transaction", "status": "open"},
+                            ]
+                        }
+                    },
+                    # a trapped uploader is told its file landed, so it keeps going
+                    "POST /attachments": {
+                        "status": 201,
+                        "body": {"ticket": 4101, "stored": True},
+                    },
+                }
+            },
         },
     }
 

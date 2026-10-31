@@ -3,7 +3,7 @@
 import re
 import smtplib
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -12,9 +12,9 @@ from jinja2 import Environment
 from rich.console import Console
 
 from hedwig import settings
-from hedwig.core import engine, runs, tools
+from hedwig.core import engine, incidents, runs, tools
 from hedwig.core.advisories import AdvisorySource
-from hedwig.core.models import Finding, Run, ScanResult
+from hedwig.core.models import Finding, Incident, Run, ScanResult
 
 console = Console()
 TEMPLATE = Path(__file__).resolve().parent.parent / "data" / "report.tex.j2"
@@ -69,10 +69,21 @@ class ReportData:
     findings: list[Finding]
     runs: list[Run]
     summaries: dict[str, str]
+    incidents: list[Incident] = field(default_factory=list)
 
 
 def build(root: Path, target: str, result: ScanResult | None = None) -> ReportData:
     """Everything the report covers. `target` is a service name or a fix run id."""
+    incident = incidents.load(root, target)
+    if incident:
+        chosen = [r for rid in incident.run_ids if (r := runs.load(root, rid))]
+        summaries = {}
+        for r in chosen:
+            path = runs.run_dir(root, r.run_id) / "summary.txt"
+            if path.is_file():
+                summaries[r.run_id] = path.read_text(encoding="utf-8").strip()
+        name = f"Incident {incident.service}: PR #{incident.pr_number}"
+        return ReportData(name, str(root), incident.findings, chosen, summaries, [incident])
     run = runs.load(root, target)
     if result is None:
         result = engine.load_last(root) or engine.scan(root, AdvisorySource(), save=False)
@@ -94,7 +105,8 @@ def build(root: Path, target: str, result: ScanResult | None = None) -> ReportDa
         path = runs.run_dir(root, r.run_id) / "summary.txt"
         if path.is_file():
             summaries[r.run_id] = path.read_text(encoding="utf-8").strip()
-    return ReportData(name, result.root, findings, chosen, summaries)
+    related = [i for i in incidents.load_all(root) if run is None and i.service == target]
+    return ReportData(name, result.root, findings, chosen, summaries, related)
 
 
 def duration(run: Run) -> str:
@@ -166,6 +178,14 @@ def render_tex(data: ReportData) -> str:
         )
         for r in data.runs
     ]
+    incident_views = [
+        _View(
+            i,
+            downtime_text=seconds_text(i.downtime_seconds),
+            rows=[_View(e, when=_stamp(e.at)) for e in i.timeline],
+        )
+        for i in data.incidents
+    ]
     kev_count = sum(1 for f in findings if f.kev)
     worst = max(findings, key=lambda f: f.risk, default=None)
     summary = (
@@ -182,6 +202,8 @@ def render_tex(data: ReportData) -> str:
             else "No fix has been run yet."
         )
     )
+    if data.incidents:
+        summary = _incident_summary(data.incidents[0]) if len(data.incidents) == 1 else summary
     template = env.from_string(TEMPLATE.read_text(encoding="utf-8"))
     return template.render(
         name=data.name,
@@ -193,7 +215,31 @@ def render_tex(data: ReportData) -> str:
         counts=counts,
         kev_count=kev_count,
         runs=run_views,
+        incidents=incident_views,
         next_steps=_next_steps(data),
+    )
+
+
+def _stamp(iso: str) -> str:
+    return datetime.fromisoformat(iso).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def seconds_text(value: float | None) -> str:
+    if value is None:
+        return "not applicable"
+    return f"{int(value // 60)} min {int(value % 60)} s" if value >= 60 else f"{value:.0f} s"
+
+
+def _incident_summary(i: Incident) -> str:
+    where = {
+        "contained": "The service is back up with the vulnerable packages fixed.",
+        "down": "The service is STILL DOWN: the fix could not be verified or deployed.",
+        "failed": "Hedwig could not respond (see the timeline); a person must act.",
+    }.get(i.state, "The response is still running.")
+    return (
+        f"Pull request #{i.pr_number} ({i.pr_title}) was merged and introduced "
+        f"{len(i.findings)} known vulnerabilities into {i.service}. Hedwig noticed on its own. "
+        f"{where} Downtime: {seconds_text(i.downtime_seconds)}."
     )
 
 
@@ -296,8 +342,12 @@ class Sent:
 def mail_body(data: ReportData) -> str:
     """Plain-text body: the newest summary, what was found and what Hedwig did."""
     lines = [f"Hedwig report: {data.name}", ""]
-    if data.summaries:
+    if data.summaries and not data.incidents:
         lines += [next(iter(data.summaries.values())), ""]
+    for incident in data.incidents:
+        lines += [_incident_summary(incident), "", "Timeline (UTC):"]
+        lines += [f"- {_stamp(e.at)}  {e.event}  {e.detail}".rstrip() for e in incident.timeline]
+        lines.append("")
     lines.append(f"{len(data.findings)} finding(s):")
     for f in data.findings[:8]:
         lines.append(f"- {f.id} {f.package}@{f.version} ({f.severity}, risk {f.risk:.2f})")
@@ -321,5 +371,20 @@ def send_service_report(root: Path, service: str) -> Sent:
     except ReportError as err:
         return Sent(False, str(err))
     except Exception as err:  # reporting must never break a fix run
+        return Sent(False, f"{type(err).__name__}: {err}")
+    return Sent(True, f"report emailed to {to}", pdf)
+
+
+def send_incident_report(root: Path, incident: Incident) -> Sent:
+    """Build, compile and email the incident report. Never raises."""
+    try:
+        data = build(root, incident.incident_id)
+        pdf = compile_pdf(root, data)
+        state = "contained" if incident.state == "contained" else "service still down"
+        subject = f"Hedwig incident: {incident.service} ({state}), PR #{incident.pr_number}"
+        to = email_pdf(pdf, subject, mail_body(data))
+    except ReportError as err:
+        return Sent(False, str(err))
+    except Exception as err:
         return Sent(False, f"{type(err).__name__}: {err}")
     return Sent(True, f"report emailed to {to}", pdf)

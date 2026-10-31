@@ -44,4 +44,33 @@ final class Tickets
             'library' => 'PHPMailer ' . PHPMailer::VERSION,
         ];
     }
+
+    /** File types a customer may attach to a ticket. */
+    public const ATTACHMENT_TYPES = ['png', 'jpg', 'jpeg', 'pdf', 'txt'];
+    public const ATTACHMENT_MAX_BYTES = 1048576;
+
+    /**
+     * Accept a ticket attachment: check its type and size, report its hash, and keep nothing.
+     * The Guard in front already inspects uploads; this is the service's own last check.
+     *
+     * @return array{0:int,1:array<string,mixed>} HTTP status and JSON body
+     */
+    public static function attach(string $filename, string $content): array
+    {
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        if ($filename === '' || !in_array($extension, self::ATTACHMENT_TYPES, true)) {
+            return [415, ['error' => 'file type not allowed']];
+        }
+        if (strlen($content) > self::ATTACHMENT_MAX_BYTES) {
+            return [413, ['error' => 'file too large']];
+        }
+
+        return [201, [
+            'ticket' => 4101,
+            'filename' => basename($filename),
+            'size' => strlen($content),
+            'sha256' => hash('sha256', $content),
+            'stored' => false,
+        ]];
+    }
 }

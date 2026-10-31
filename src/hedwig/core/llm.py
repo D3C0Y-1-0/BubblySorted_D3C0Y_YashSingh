@@ -13,6 +13,11 @@ from hedwig.core import audit
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 TIMEOUT = 90
+# Groq counts a request's max output against the per-minute budget and refuses one that asks for
+# more than the budget ("Request too large"), so every call states a modest limit of its own.
+MAX_TOKENS = 900
+RATE_RETRIES = 3
+MAX_WAIT = 30
 
 
 class AgentError(Exception):
@@ -25,7 +30,16 @@ def _json_object(text: str) -> dict:
     return json.loads(fenced.group(1) if fenced else text)
 
 
-def chat[T: BaseModel](root: Path, agent: str, system: str, user: str, schema: type[T]) -> T:
+def _retry_after(response: httpx.Response) -> float:
+    try:
+        return min(float(response.headers.get("retry-after", "5")), MAX_WAIT)
+    except ValueError:
+        return 5.0
+
+
+def chat[T: BaseModel](
+    root: Path, agent: str, system: str, user: str, schema: type[T], max_tokens: int = MAX_TOKENS
+) -> T:
     key = settings.get("groq_api_key")
     if not key:
         raise AgentError("groq_api_key is not set, run: hedwig config")
@@ -33,6 +47,7 @@ def chat[T: BaseModel](root: Path, agent: str, system: str, user: str, schema: t
     body = {
         "model": model,
         "temperature": 0,
+        "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
         "reasoning_format": "hidden",  # "raw" is rejected together with JSON mode
         "messages": [
@@ -43,9 +58,13 @@ def chat[T: BaseModel](root: Path, agent: str, system: str, user: str, schema: t
     started = time.monotonic()
     status, usage = "ok", {}
     try:
-        response = httpx.post(
-            GROQ_URL, json=body, headers={"Authorization": f"Bearer {key}"}, timeout=TIMEOUT
-        )
+        for attempt in range(RATE_RETRIES + 1):
+            response = httpx.post(
+                GROQ_URL, json=body, headers={"Authorization": f"Bearer {key}"}, timeout=TIMEOUT
+            )
+            if response.status_code != 429 or attempt == RATE_RETRIES:
+                break
+            time.sleep(_retry_after(response))  # the per-minute budget refills; wait and retry
         response.raise_for_status()
         data = response.json()
         usage = data.get("usage") or {}

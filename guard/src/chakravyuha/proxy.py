@@ -202,7 +202,10 @@ class Guard:
             action = "blocked"  # allowlisted: never banned
         if stop.trap and not self.state.trap(ctx.ip):
             action = "blocked"
-        self.emit(action, ctx, stop.status, stop.ring, category=stop.category, rule=stop.rule)
+        extra = {"hedwig.ban_minutes": stop.ban_minutes} if action == "banned" else {}
+        self.emit(
+            action, ctx, stop.status, stop.ring, category=stop.category, rule=stop.rule, **extra
+        )
         if stop.ring != 1 and not stop.trap:
             self.trap_if_suspicious(ctx)
         response = Response(
@@ -412,6 +415,7 @@ class Guard:
             "hedwig.honeytoken.kind": token.kind,
             "hedwig.honeytoken.issued_to": token.ip,
             "hedwig.linked_ips": linked,
+            "hedwig.ban_minutes": 60,
         }
         if self.monitoring(ctx):
             self.emit(

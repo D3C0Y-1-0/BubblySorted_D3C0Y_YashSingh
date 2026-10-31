@@ -35,4 +35,4 @@ def propose(
         f"Current content of the allowed files:\n{file_contents(folder, allowed)}\n"
         f"{retry}\nAnswer with the JSON object."
     )
-    return llm.chat(root, "fixer", prompt("fixer"), user, FixerOutput)
+    return llm.chat(root, "fixer", prompt("fixer"), user, FixerOutput, max_tokens=1000)

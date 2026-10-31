@@ -22,11 +22,21 @@ from textual.widgets import (
 )
 
 from hedwig import settings
-from hedwig.core import actions, audit, deploy, engine, evidence, guard_feed, runner, runs
+from hedwig.core import (
+    actions,
+    audit,
+    deploy,
+    engine,
+    evidence,
+    guard_feed,
+    incidents,
+    runner,
+    runs,
+)
 from hedwig.core.advisories import AdvisorySource
 from hedwig.core.agents import orchestrator
 from hedwig.core.models import CallSite, Finding, Run, ScanResult
-from hedwig.core.report import duration
+from hedwig.core.report import duration, seconds_text
 
 SEVERITY_STYLE = {"critical": "bold red", "high": "dark_orange", "medium": "yellow", "low": "dim"}
 OWL = {
@@ -465,6 +475,19 @@ class DashApp(App):
                     f"{outcome} ({duration(run)})",
                     f"{run.package} {run.from_version} to {run.to_version or '-'}\n"
                     f"{text}\n\n{steps}",
+                )
+            )
+        for incident in incidents.load_all(self.root):
+            timeline = "\n".join(f"{e.at[11:19]}  {e.event}  {e.detail}" for e in incident.timeline)
+            rows.append(
+                ReportRow(
+                    f"incident:{incident.incident_id}",
+                    incident.timeline[0].at if incident.timeline else "",
+                    incident.service,
+                    "incident",
+                    f"{incident.state}, downtime {seconds_text(incident.downtime_seconds)}",
+                    f"PR #{incident.pr_number} {incident.pr_title} ({incident.pr_url})\n"
+                    f"{incident.report}\n\n{timeline}",
                 )
             )
         for number, entry in enumerate(audit.read(self.root)):

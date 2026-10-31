@@ -16,11 +16,58 @@ import ssl
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from typing import Any
 
 REPORTABLE = {"blocked", "banned", "trapped"}  # a decision worth telling the PM about
+
+
+MAX_ATTACKERS = 10
+
+
+def _when(stamp: str | None) -> str:
+    """An event's ISO timestamp as a UTC time of day."""
+    if not stamp:
+        return "?"
+    try:
+        return datetime.fromisoformat(stamp).astimezone(UTC).strftime("%H:%M:%S")
+    except ValueError:
+        return stamp
+
+
+@dataclass
+class Attacker:
+    """What one source address did since the last digest, for the PM."""
+
+    ip: str
+    first_seen: str = ""
+    targets: dict[str, int] = field(default_factory=dict)  # "service /path" -> requests stopped
+    rules: dict[str, int] = field(default_factory=dict)  # rule -> times it caught this client
+    stopped: int = 0
+    decoy: int = 0  # requests the decoy bank answered instead of the real one
+    trapped_at: str = ""
+    banned_at: str = ""
+    banned_until: str = ""
+    ban_reason: str = ""
+
+    def lines(self) -> list[str]:
+        target = max(self.targets, key=self.targets.get) if self.targets else "-"
+        out = [f"- {self.ip}  targeted {target}"]
+        steps = [f"first seen {_when(self.first_seen)}"]
+        if self.trapped_at:
+            steps.append(f"trapped in the decoy bank at {_when(self.trapped_at)}")
+        if self.banned_at:
+            until = f" until {self.banned_until}" if self.banned_until else ""
+            steps.append(f"banned at {_when(self.banned_at)}{until} ({self.ban_reason})")
+        out.append("    " + ", ".join(steps) + " (UTC)")
+        rules = ", ".join(f"{r} x{n}" for r, n in sorted(self.rules.items(), key=lambda i: -i[1]))
+        out.append(
+            f"    stopped {self.stopped} request(s); the decoy answered {self.decoy}; "
+            f"caught by: {rules or '-'}"
+        )
+        return out
 
 
 @dataclass
@@ -91,6 +138,7 @@ class PMNotifier:
         self._lock = threading.Lock()
         self.pending_since: float | None = None
         self.pending: dict[str, int] = {}  # action -> count since the last digest
+        self.attackers: dict[str, Attacker] = {}  # ip -> what it did since the last digest
         self.cooldown_until = 0.0
         self.sent = 0  # digests sent
         self.alarms_sent = 0
@@ -106,8 +154,59 @@ class PMNotifier:
             return
         with self._lock:
             self.pending[action] = self.pending.get(action, 0) + 1
+            self._note_attacker(action, event)
             if self.pending_since is None:
                 self.pending_since = self.clock()
+
+    def _note_attacker(self, action: str, event: dict[str, Any]) -> None:
+        ip = event.get("source.ip")
+        if not ip:
+            return
+        stamp = event.get("@timestamp", "")
+        who = self.attackers.setdefault(ip, Attacker(ip=ip, first_seen=stamp))
+        if action == "trapped" and event.get("hedwig.decoy"):
+            who.decoy += 1
+            who.trapped_at = who.trapped_at or stamp
+            return
+        rule = event.get("rule") or event.get("event.category") or "?"
+        who.rules[rule] = who.rules.get(rule, 0) + 1
+        if action == "trapped":
+            who.trapped_at = who.trapped_at or stamp
+        elif action == "banned":
+            who.banned_at = who.banned_at or stamp
+            who.ban_reason = rule
+            minutes = event.get("hedwig.ban_minutes")
+            if minutes and stamp:
+                try:
+                    start = datetime.fromisoformat(stamp)
+                    who.banned_until = (
+                        (start + timedelta(minutes=minutes))
+                        .astimezone(UTC)
+                        .strftime("%H:%M:%S UTC")
+                    )
+                except ValueError:
+                    pass
+        else:
+            who.stopped += 1
+        target = f"{event.get('service') or '-'} {event.get('url.path') or ''}".strip()
+        who.targets[target] = who.targets.get(target, 0) + 1
+
+    def _alarm_attackers(self, alarm: dict[str, Any]) -> str:
+        with self._lock:
+            mine = [self.attackers[ip] for ip in (alarm.get("issued_to"), alarm.get("ip"))
+                    if ip in self.attackers]  # fmt: skip
+        return "\n" + self._attackers_text(mine) if mine else ""
+
+    def _attackers_text(self, attackers: list[Attacker]) -> str:
+        if not attackers:
+            return ""
+        shown = sorted(attackers, key=lambda a: a.first_seen)[:MAX_ATTACKERS]
+        lines = ["Attackers:"]
+        for attacker in shown:
+            lines += attacker.lines()
+        if len(attackers) > len(shown):
+            lines.append(f"- ...and {len(attackers) - len(shown)} more")
+        return "\n".join(lines) + "\n\n"
 
     def on_alarm(self, alarm: dict[str, Any]) -> None:
         """A honeytoken alarm: email at once, outside the digest timer."""
@@ -118,6 +217,7 @@ class PMNotifier:
             f"Path: {alarm.get('path')}\n"
             f"Banned: {', '.join(alarm.get('banned') or []) or 'none'}\n"
             f"This value only exists inside the decoy bank, so its use is a certain compromise.\n"
+            + self._alarm_attackers(alarm)
             + self._kibana_line()
         )
         self.alarms_sent += 1
@@ -133,6 +233,7 @@ class PMNotifier:
             if now < self.cooldown_until:
                 return False
             counts, self.pending = self.pending, {}
+            attackers, self.attackers = list(self.attackers.values()), {}
             self.pending_since = None
             self.cooldown_until = now + self.cooldown_s
             self.sent += 1
@@ -142,6 +243,7 @@ class PMNotifier:
         body = (
             f"The Guard handled {total} blocked or trapped requests ({detail}).\n\n"
             + (summary + "\n\n" if summary else "")
+            + self._attackers_text(attackers)
             + self._kibana_line()
         )
         self._dispatch(f"[Chakravyuha] {total} requests stopped", body)
