@@ -80,3 +80,40 @@ class ScanResult(BaseModel):
     services: list[ServiceInfo]
     findings: list[Finding]
     warnings: list[str] = Field(default_factory=list)
+
+
+class Edit(BaseModel):
+    """One search/replace edit proposed by the Fixer. `old` must occur exactly once."""
+
+    path: str  # relative to the service folder
+    old: str
+    new: str
+
+
+class Step(BaseModel):
+    name: str  # plan | fixer | tester | run | verifier | reporter | act
+    status: str  # running | ok | failed | skipped
+    detail: str = ""
+    at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+
+class Run(BaseModel):
+    """One pass of the fixing pipeline for one package of one service. Saved as run.json."""
+
+    run_id: str
+    service: str
+    package: str
+    ecosystem: str
+    from_version: str
+    to_version: str | None
+    advisories: list[str]
+    branch: str = ""
+    state: str = "running"  # running | verified | failed | skipped
+    action: str = ""  # merged | review_pr | failed_pr | takedown | notify | none
+    decision: Decision | None = None
+    violations: list[str] = Field(default_factory=list)
+    failed_step: str = ""
+    attempts: int = 0
+    steps: list[Step] = Field(default_factory=list)
+    started_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    finished_at: str = ""

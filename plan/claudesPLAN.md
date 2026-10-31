@@ -210,8 +210,13 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - `hedwig replay log4shell --dry-run --json` gives the expected decision.
 
 ## Phase 3: Multi-agent fixing system (local)
-- `versions.py`, `runner.py`, `llm.py`, `core/agents/*` with prompts, as designed above.
-- `hedwig fix <service> [--dry-run]` runs the pipeline in a worktree.
+- `bump.py`, `runner.py`, `llm.py`, `audit.py`, `actions.py`, `runs.py`, `core/agents/*` with prompts, as designed above.
+- `hedwig fix <service> [--package NAME] [--dry-run]` (and `/fix`) runs the pipeline in a worktree, one run per vulnerable package.
+- Built differently from the first design:
+  - The Fixer returns search/replace edits (`{path, old, new}`), not whole files. That keeps the diff under the line budget and stops it reformatting.
+  - The version bump and the lockfile regeneration are deterministic code (`bump.py`) and happen before the Fixer. The Fixer only adapts source code, and only runs when the package has call sites or a previous attempt failed.
+  - Groq is called with `httpx`, not the OpenAI SDK.
+  - A package that is only a transitive dependency is not bumped; the run is skipped and the PM is notified.
 - Acting locally:
   - **Merge:** if verified and allowed, fast-forward the fix branch into the current branch.
   - **PR:** `pr.md` is saved, ready for the GitHub phase.
@@ -231,7 +236,7 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - Every agent call and decision is written to the audit log.
 
 ## Phase 4: Reports + terminal dashboard
-- `hedwig report <service|run-id>`: Jinja2 `.tex` → `tectonic` → PDF, covering what was found, why it ranks there, evidence, action taken, time-to-action and next steps. `--email` sends it over SMTP to `pm_email`.
+- `hedwig report <service|run-id>`: Jinja2 `.tex` → `tectonic` → PDF, covering what was found, why it ranks there, evidence, action taken, time-to-action and next steps. `--email` sends it over SMTP to `pm_email` (Gmail `smtp.gmail.com:587` unless `smtp_host`/`smtp_port` are set).
 - `hedwig dash` (Textual):
   - owl header (watching/alert/asleep), risk gauge, feed freshness, clock
   - a card per service (tier, health, risk colour)

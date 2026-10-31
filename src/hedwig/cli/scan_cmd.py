@@ -333,7 +333,7 @@ def replay(
     console.print(table)
     for f in result.findings:
         console.print(f"  [bold]{f.id}[/bold] {f.package}@{f.version}: {f.reasoning}")
-    console.print("\nNothing was changed. The fix pipeline arrives in Phase 3.")
+    console.print("\nNothing was changed. Run fix <service> to act on it.")
 
 
 def simulate_attack(

@@ -34,17 +34,27 @@ class ServiceSpec:
     tier: str
     allow: list[str]  # what Hedwig may do on its own: open_fix_pr, auto_merge_if_verified, ...
     log_path: Path  # access log read for attack evidence
+    test_cmd: str = ""  # run by the fixing pipeline; guessed per language when not set
+    port: int = 3000
+    health_path: str = "/health"
 
 
 def _spec(root: Path, name: str, folder: Path, tier: str, raw: dict | None) -> ServiceSpec:
     raw = raw or {}
     log = raw.get("log_path")
+    guess = next(
+        (cmd for manifest, (_, cmd) in config.MANIFESTS.items() if (folder / manifest).is_file()),
+        "",
+    )
     return ServiceSpec(
         name=name,
         folder=folder,
         tier=raw.get("tier", tier),
         allow=list(DEFAULT_ALLOW if raw.get("allow") is None else raw["allow"]),
         log_path=root / log if log else folder / "logs" / "access.log",
+        test_cmd=raw.get("test_cmd") or guess,
+        port=int(raw.get("port") or 3000),
+        health_path=raw.get("health_path") or "/health",
     )
 
 

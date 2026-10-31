@@ -1,0 +1,66 @@
+"""What Hedwig does once the policy gate has decided. Every action is audited.
+
+Merge is real (a fast-forward of the fix branch). Takedown is only recorded until the executor
+arrives with the deployment phase.
+"""
+
+import json
+from pathlib import Path
+
+from hedwig.core import audit, runner
+from hedwig.core.models import Run
+
+STATE = Path(".hedwig") / "state.json"
+
+
+def load_state(root: Path) -> dict:
+    try:
+        return json.loads((root / STATE).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"down": {}}
+
+
+def _save_state(root: Path, state: dict) -> None:
+    path = root / STATE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def merge(root: Path, top: Path, branch: str, service: str) -> str | None:
+    """Fast-forward the current branch to the fix branch. Returns an error, or None on success."""
+    done = runner.git(top, "merge", "--ff-only", branch)
+    ok = done.returncode == 0
+    audit.record(root, "action", action="merge", service=service, branch=branch, ok=ok)
+    return None if ok else (done.stderr or done.stdout).strip()[-300:]
+
+
+def takedown(root: Path, service: str, reason: str) -> None:
+    state = load_state(root)
+    state.setdefault("down", {})[service] = {"reason": reason, "status": "pending executor"}
+    _save_state(root, state)
+    audit.record(root, "action", action="takedown", service=service, reason=reason)
+
+
+def is_down(root: Path, service: str) -> bool:
+    return service in load_state(root).get("down", {})
+
+
+def save_pr(root: Path, run: Run, title: str, body: str, label: str) -> Path:
+    """The pull request text, ready for the GitHub phase to open."""
+    from hedwig.core import runs
+
+    text = f"# {title}\n\nLabel: `{label}`\nBranch: `{run.branch}`\n\n{body}\n"
+    runs.write_artifact(root, run.run_id, "pr.md", text)
+    audit.record(root, "action", action="save_pr", run=run.run_id, label=label)
+    return runs.run_dir(root, run.run_id) / "pr.md"
+
+
+def notify_pm(root: Path, service: str, reason: str) -> str:
+    """Email the project manager the report if email is set up. Never raises."""
+    from hedwig.core import report
+
+    audit.record(root, "action", action="notify_pm", service=service, reason=reason)
+    try:
+        return report.send_service_report(root, service)
+    except Exception as err:  # reporting must never break a fix run
+        return f"report not sent: {err}"
