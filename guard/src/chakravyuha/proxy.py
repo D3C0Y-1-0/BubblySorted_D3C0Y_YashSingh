@@ -26,6 +26,7 @@ from .challenge import Challenger
 from .config import Config, Service
 from .decoy import Decoy
 from .events import EventBus, make_event
+from .honeytokens import Honeytokens, Token
 from .routes import RouteRing
 from .state import State
 from .stats import Stats
@@ -94,6 +95,11 @@ class Guard:
         self.campaigns: list[dict] = []
         self.agents_status = "rules"  # rules | ai | offline
         self.elk_status = "off"  # off | online | offline
+        tokens_file = config.data_dir / "honeytokens.jsonl" if config.data_dir else None
+        self.honeytokens = Honeytokens(self.secret, tokens_file)
+        self.decoy.fill = self.honeytokens.fill
+        self.links: dict[str, set[str]] = {}  # trapped IP -> IPs that used its honeytokens
+        self.alarm_listeners: list[Callable[[dict], None]] = []  # the PM notifier (C11)
         self.stats = Stats()
         self.bus.listeners.append(self.stats.record)
         self.sleep = sleep
@@ -253,6 +259,10 @@ class Guard:
 
     async def _handle(self, request: Request, ctx: rings.Ctx) -> Response:
         config = self.config
+        headers = [v for k, v in ctx.headers.items() if k != "host"]
+        basic = Honeytokens.decoded_basic(ctx.headers.get("authorization", ""))
+        if response := self.check_honeytokens(ctx, 1, ctx.path, ctx.query, basic, *headers):
+            return response
         for number, ring in ((1, rings.gate), (2, rings.flood)):
             if response := self.run_ring(number, ring, ctx):
                 return response
@@ -274,6 +284,8 @@ class Guard:
         except ClientDisconnect:
             return Response(status_code=499)
 
+        if response := self.check_honeytokens(ctx, 6, ctx.body):
+            return response
         if response := self.run_ring(4, self.route_ring.ring, ctx):
             return response
         if ctx.service is None:  # ring 4 failed open or is monitoring: there is nowhere to go
@@ -291,7 +303,11 @@ class Guard:
 
     async def maze(self, ctx: rings.Ctx) -> Response:
         """Ring 7: the decoy answers. The real service never sees this request."""
-        answer = self.decoy.respond(ctx, self.state)
+        try:
+            answer = self.decoy.respond(ctx, self.state)
+        except Exception as error:  # never fail open to the real bank from inside the maze
+            self.guard_error(ctx, 7, error)
+            return self.with_security(PlainTextResponse("Service Unavailable", 503))
         delay = answer.delay
         if ctx.tarpit:
             delay = max(delay, rings.tarpit_delay(self.state.suspicion(ctx.client), self.config))
@@ -302,6 +318,84 @@ class Guard:
             **{"hedwig.decoy": True},
         )  # fmt: skip
         return self.with_security(answer.response)
+
+    # -- honeytokens ------------------------------------------------------------------------
+    def check_honeytokens(self, ctx: rings.Ctx, ring: int, *parts) -> Response | None:
+        try:
+            tokens = self.honeytokens.scan(*parts)
+        except Exception as error:  # fail open
+            self.guard_error(ctx, ring, error)
+            return None
+        # a decoy session cookie coming back from its own client is just that client's cookie
+        hits = [t for t in tokens if not (t.kind == "session" and t.ip == ctx.ip)]
+        return self.honeytoken_alarm(ctx, ring, hits[0]) if hits else None
+
+    def honeytoken_alarm(self, ctx: rings.Ctx, ring: int, token: Token) -> Response | None:
+        """Certain compromise: ban every IP linked to the trapped client that got the token."""
+        links = self.links.setdefault(token.ip, set())
+        links.add(ctx.ip)
+        linked = sorted({token.ip, *links})
+        fields = {
+            "hedwig.honeytoken.kind": token.kind,
+            "hedwig.honeytoken.issued_to": token.ip,
+            "hedwig.linked_ips": linked,
+        }
+        if self.monitoring(ctx):
+            self.emit(
+                "banned",
+                ctx,
+                None,
+                ring,
+                category="honeytoken",
+                rule=f"honeytoken-{token.kind}",
+                **fields,
+                **{"hedwig.monitor": True},
+            )
+            return None
+        banned = [ip for ip in linked if self.state.ban(ip, 60)]
+        for ip in banned:
+            self.state.release(ip)
+        self.emit(
+            "banned",
+            ctx,
+            403,
+            ring,
+            category="honeytoken",
+            rule=f"honeytoken-{token.kind}",
+            **fields,
+        )
+        alarm = {
+            "@timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+            "kind": token.kind,
+            "ip": ctx.ip,
+            "issued_to": token.ip,
+            "issued_at": token.issued,
+            "path": ctx.path[:200],
+            "banned": banned,
+        }
+        recent = self.alarms[-1] if self.alarms else None
+        if not (
+            recent
+            and (recent["kind"], recent["ip"]) == (token.kind, ctx.ip)
+            and recent["@timestamp"][:16] == alarm["@timestamp"][:16]
+        ):
+            self.alarms.append(alarm)
+            self.note(
+                "Guard",
+                f"honeytoken {token.kind} used from {ctx.ip}; "
+                f"it was handed to {token.ip}. Banned: {', '.join(banned) or 'none'}",
+            )
+            for listener in self.alarm_listeners:
+                try:
+                    listener(alarm)
+                except Exception as error:  # an email failure must never affect proxying
+                    self.guard_error(ctx, ring, error)
+        return self.with_security(PlainTextResponse("Forbidden", 403))
+
+    def rotate_tokens(self, agent: str = "Operator") -> int:
+        epoch = self.honeytokens.rotate()
+        self.note(agent, f"honeytokens rotated (set {epoch})")
+        return epoch
 
     def note(self, agent: str, text: str) -> None:
         stamp = datetime.now(UTC).isoformat(timespec="seconds")
