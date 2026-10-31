@@ -9,9 +9,14 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from hedwig.core import engine
-from hedwig.core.advisories import AdvisorySource, AdvisoryUnavailable
-from hedwig.core.models import Finding, ScanResult
+from hedwig.core import engine, evidence, inventory
+from hedwig.core.advisories import (
+    REPLAY_DIR,
+    AdvisorySource,
+    AdvisoryUnavailable,
+    replay_names,
+)
+from hedwig.core.models import Decision, Finding, ScanResult
 
 console = Console()
 
@@ -69,6 +74,7 @@ class _Row:
     services: list[str] = field(default_factory=list)
     ids: list[str] = field(default_factory=list)
     kev: bool = False
+    evidence: int = 0
 
     @property
     def advisories(self) -> str:
@@ -90,6 +96,7 @@ def _rows(findings: list[Finding]) -> list[_Row]:
         if f.id not in row.ids:
             row.ids.append(f.id)
         row.kev = row.kev or f.kev
+        row.evidence = max(row.evidence, f.evidence_level)
     return list(rows.values())
 
 
@@ -106,7 +113,9 @@ def _render_scan(result: ScanResult) -> None:
     rows = _rows(findings)
     if findings:
         table = Table(title=f"Hedwig scan: {result.root}")
-        for column in ("severity", "risk", "service", "package", "advisory", "fix to", "KEV"):
+        for column in (
+            "severity", "risk", "service", "package", "advisory", "fix to", "KEV", "ev", "next"
+        ):  # fmt: skip
             table.add_column(column, overflow="fold")
         for row in rows[:TABLE_ROWS]:
             f = row.top
@@ -119,6 +128,8 @@ def _render_scan(result: ScanResult) -> None:
                 row.advisories,
                 _fix_label(f),
                 _kev_label(row, result),
+                str(row.evidence),
+                f.decision.action,
             )
         console.print(table)
         if len(rows) > TABLE_ROWS:
@@ -178,6 +189,7 @@ def status(
                 "packages": service.packages,
                 "findings": _counts(findings),
                 "top_risk": max((f.risk for f in findings), default=0.0),
+                "max_evidence": max((f.evidence_level for f in findings), default=0),
             }
         )
     if json_output:
@@ -186,7 +198,8 @@ def status(
     for warning in result.warnings:
         console.print(f"[yellow]warning:[/yellow] {warning}")
     table = Table(title=f"Hedwig status: {result.root}")
-    for column in ("service", "tier", "packages", *SEVERITIES, "top risk"):
+    short = {"critical": "crit", "medium": "med"}
+    for column in ("service", "tier", "pkgs", *(short.get(x, x) for x in SEVERITIES), "risk", "ev"):
         table.add_column(column, overflow="fold")
     for row in rows:
         counts = row["findings"]
@@ -196,8 +209,24 @@ def status(
             str(row["packages"]),
             *(str(counts[s]) if counts[s] else "-" for s in SEVERITIES),
             f"{row['top_risk']:.2f}",
+            str(row["max_evidence"]),
         )
     console.print(table)
+
+
+EVIDENCE_TEXT = {
+    0: "vulnerable version present",
+    1: "the vulnerable code is called",
+    2: "exploited in the wild (CISA KEV)",
+    3: "attack attempts seen in the service logs",
+    4: "signs of compromise in the service logs",
+}
+
+
+def _decision_label(decision: Decision) -> str:
+    if decision.action != "fix":
+        return decision.action
+    return f"fix (if verified: {decision.on_verified}; if not: {decision.on_failed})"
 
 
 def _action(f: Finding) -> str:
@@ -248,18 +277,111 @@ def explain(
             f"{factors.confidence:.2f}",
         )
         console.print(table)
-        evidence = "listed in CISA KEV" if f.kev else "vulnerable version present"
-        console.print(f"  Evidence level {f.evidence_level}: {evidence}")
-        console.print(f"  [bold]Action:[/bold] {_action(f)}")
+        console.print(f"  Evidence level {f.evidence_level}: {EVIDENCE_TEXT[f.evidence_level]}")
+        console.print(f"  Reachability: {f.reachability}")
+        for site in f.call_sites:
+            console.print(f"    {site.symbol} in {site.function}() at {site.file}:{site.line}")
+        for attack in f.attacks:
+            console.print(f"  [red]Attack in logs:[/red] {attack}")
+        if f.compromise:
+            console.print("  [bold red]Signs of compromise in the service logs[/bold red]")
+        console.print(f"  [bold]Fix:[/bold] {_action(f)}")
+        decision = f.decision
+        console.print(f"  [bold]Decision:[/bold] {_decision_label(decision)}: {decision.reason}")
+
+
+PATTERN_HELP = "Attack to write: " + ", ".join(rule.id for rule in evidence.RULES)
+
+
+def replay(
+    name: Annotated[str, typer.Argument(help=f"Advisory to inject: {', '.join(replay_names())}.")],
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the decisions only (nothing acts yet).")
+    ] = False,
+    tier: Tier = "medium",
+    json_output: AsJson = False,
+) -> None:
+    """Inject a known advisory into the pipeline and show what Hedwig would do about it."""
+    if name not in replay_names():
+        raise _fail(f"Unknown advisory '{name}'. Available: {', '.join(replay_names())}.", 1)
+    source = AdvisorySource(offline=True, directory=REPLAY_DIR, only={name})
+    try:
+        result = engine.scan(Path.cwd(), source, tier, save=False)
+    except (AdvisoryUnavailable, RuntimeError) as err:
+        raise _fail(str(err)) from err
+    if json_output:
+        _print_json(result)
+        return
+    for warning in result.warnings:
+        console.print(f"[yellow]warning:[/yellow] {warning}")
+    if not result.findings:
+        console.print(f"{name} does not affect any service in this folder.")
+        return
+    table = Table(title=f"Replay of {name}")
+    for column in ("severity", "service", "package", "advisory", "ev", "decision"):
+        table.add_column(column, overflow="fold")
+    for f in result.findings:
+        style = SEVERITY_STYLE[f.severity]
+        table.add_row(
+            f"[{style}]{f.severity}[/{style}]",
+            f.service,
+            f"{f.package}@{f.version}",
+            f.id,
+            str(f.evidence_level),
+            _decision_label(f.decision),
+        )
+    console.print(table)
+    for f in result.findings:
+        console.print(f"  [bold]{f.id}[/bold] {f.package}@{f.version}: {f.reasoning}")
+    console.print("\nNothing was changed. The fix pipeline arrives in Phase 3.")
+
+
+def simulate_attack(
+    service: Annotated[str, typer.Argument(help="Service (folder) to attack.")],
+    compromise: Annotated[
+        bool, typer.Option("--compromise", help="Also write a sign of compromise.")
+    ] = False,
+    pattern: Annotated[str | None, typer.Option("--pattern", help=PATTERN_HELP)] = None,
+) -> None:
+    """Write an attack request (and with --compromise, a compromise marker) to a service's log."""
+    specs = {spec.name: spec for spec in engine.resolve_services(Path.cwd(), "medium")}
+    if service not in specs:
+        raise _fail(f"No service '{service}' here. Services: {', '.join(specs) or 'none'}.", 1)
+    if pattern and pattern not in {r.id for r in evidence.RULES}:
+        raise _fail(f"Unknown pattern '{pattern}'.", 1)
+    spec = specs[service]
+    packages, _ = inventory.parse_service(spec.folder, service)
+    rule = evidence.pick_rule([p.name for p in packages], pattern)
+    lines = evidence.write_attack(spec.log_path, rule, compromise)
+    console.print(f"Wrote {len(lines)} line(s) to [bold]{spec.log_path}[/bold] ({rule.label}):")
+    for line in lines:
+        console.print(f"  {line}")
+    console.print("Run [bold]scan[/bold] to see the evidence level rise.")
 
 
 APP_USAGE = {
     "scan": "/scan [path|git-url] [--offline] [--advisories DIR] [--tier TIER] [--json]",
     "status": "/status [--offline] [--advisories DIR] [--tier TIER] [--json]",
     "explain": "/explain <id> [--offline] [--advisories DIR] [--tier TIER] [--json]",
+    "replay": "/replay <advisory> [--dry-run] [--tier TIER] [--json]",
+    "simulate-attack": "/simulate-attack <service> [--compromise] [--pattern ID]",
 }
-_APP_FLAGS = {"--offline": "offline", "--json": "json_output"}
-_APP_OPTIONS = {"--advisories": "advisories", "--tier": "tier"}
+_APP_FLAGS = {
+    "--offline": "offline",
+    "--json": "json_output",
+    "--dry-run": "dry_run",
+    "--compromise": "compromise",
+}
+_APP_OPTIONS = {"--advisories": "advisories", "--tier": "tier", "--pattern": "pattern"}
+_ALLOWED = {
+    "scan": {"offline", "advisories", "tier", "json_output"},
+    "status": {"offline", "advisories", "tier", "json_output"},
+    "explain": {"offline", "advisories", "tier", "json_output"},
+    "replay": {"dry_run", "tier", "json_output"},
+    "simulate-attack": {"compromise", "pattern"},
+}
+_POSITIONALS = {"scan": (0, 1), "status": (0, 0), "explain": (1, 1), "replay": (1, 1)}
+_POSITIONALS["simulate-attack"] = (1, 1)
 
 
 def _parse_app_args(args: list[str]) -> tuple[list[str], dict] | str:
@@ -283,14 +405,18 @@ def _parse_app_args(args: list[str]) -> tuple[list[str], dict] | str:
 
 
 def run_in_app(name: str, args: list[str], root: Path) -> None:
-    """Run scan, status or explain from a slash command typed in the Hedwig app."""
+    """Run one of the engine's commands from a slash command typed in the Hedwig app."""
     parsed = _parse_app_args(args)
     if isinstance(parsed, str):
         console.print(f"[red]{parsed}[/red]\nUsage: {APP_USAGE[name]}")
         return
     positional, options = parsed
-    limit = 0 if name == "status" else 1
-    if len(positional) > limit or (name == "explain" and not positional):
+    unsupported = set(options) - _ALLOWED[name]
+    low, high = _POSITIONALS[name]
+    if unsupported or not low <= len(positional) <= high:
+        flags = {value: flag for flag, value in {**_APP_FLAGS, **_APP_OPTIONS}.items()}
+        if unsupported:
+            console.print(f"[red]unknown option {flags[sorted(unsupported)[0]]}[/red]")
         console.print(f"Usage: {APP_USAGE[name]}")
         return
     try:
@@ -298,8 +424,12 @@ def run_in_app(name: str, args: list[str], root: Path) -> None:
             scan(positional[0] if positional else str(root), **options)
         elif name == "status":
             status(**options)
-        else:
+        elif name == "explain":
             explain(positional[0], **options)
+        elif name == "replay":
+            replay(positional[0], **options)
+        else:
+            simulate_attack(positional[0], **options)
     except typer.Exit:
         pass  # the command already printed its error
 
@@ -308,3 +438,5 @@ def register(app: typer.Typer) -> None:
     app.command("scan")(scan)
     app.command("status")(status)
     app.command("explain")(explain)
+    app.command("replay")(replay)
+    app.command("simulate-attack")(simulate_attack)

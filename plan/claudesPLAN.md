@@ -188,24 +188,25 @@ plugin/  bank/                # later phases (Hedwig's own GitHub workflows live
 - An online scan of OWASP NodeGoat and WebGoat finishes in under 60s.
 
 ## Phase 2: Policy, reachability, evidence, replay
-- `code_index.py` parses each service's source with tree-sitter (`tree-sitter` plus the python, javascript, java, rust and php grammars, which ship prebuilt wheels for Linux, macOS and Windows) and returns the imports and call sites of a package as `(file, line, enclosing function, symbol)`. A file that fails to parse is skipped with a warning.
-- `reachability.py` uses it. A package is *called* if an imported name or alias appears in a call expression. If the advisory names affected functions, or `symbols.json` has hints for the package, only a call to one of those symbols counts. Reachability adjusts confidence and never hides a finding.
-- `evidence.py`:
+- `code_index.py` parses each service's source with tree-sitter (`tree-sitter` plus the python, javascript, java, rust and php grammars, which ship prebuilt wheels for Linux, macOS and Windows) and returns the imports and call sites of a package as `(file, line, enclosing function, symbol)`. Variables holding an imported type (`LOG`, `$mail`, a Rust `let`) are followed one step. Test folders are skipped, and a file that fails to parse is skipped with a warning.
+- `reachability.py` uses it. A package is *called* if an imported name or alias appears in a call. If the advisory names affected functions, or `symbols.json` has hints for the package (PyYAML `load`, lodash `template`/`merge`/`set`, jsonwebtoken `verify`/`sign`, regex `new`), only a call to one of those counts. Reachability adjusts confidence and never hides a finding. A package that is imported but never called, or not imported at all, stays in the list.
+- `evidence.py`, per finding:
   - 0 = version present
-  - 1 = reachable
+  - 1 = the vulnerable code is called
   - 2 = KEV
-  - 3 = attack pattern in log (`\$\{jndi:`, JWT `alg":"none`, path traversal)
-  - 4 = compromise marker in log
-- `simulate-attack <service> [--compromise]` writes a log line.
-- `replay <advisory>` feeds the fixture advisory into the same pipeline as live feeds.
-- `policy.decide()` follows the decision rule.
+  - 3 = attack pattern in the service log (JNDI lookup, JWT alg none, YAML object tag, path traversal, prototype pollution). A rule can concern only certain packages, so a JNDI attempt only raises log4j findings.
+  - 4 = compromise marker in the log (outbound connection, reverse shell, unexpected process). It raises every finding on the service.
+- The log is `log_path` in `.hedwig.yml`, default `<service>/logs/access.log`.
+- `simulate-attack <service> [--compromise] [--pattern ID]` appends an attack that fits the service's packages to its log.
+- `replay <advisory> [--dry-run]` runs the bundled advisory (`log4shell`, `jsonwebtoken`, in `src/hedwig/data/replay/` with its KEV and EPSS data) through the same pipeline and prints each decision. Nothing acts until Phase 3.
+- `policy.decide(evidence, allow)` follows the decision rule. Every finding gets an action. `allow: []` means observe only, so the action is notify. A missing `allow` defaults to `[open_fix_pr]`.
+- `scan`, `status` and `explain` show evidence, reachability and the decision. All of these are also slash commands in the app.
 
 **Done when:**
-- A table-driven pytest covers every branch of the decision rule.
-- A low-severity finding still yields a non-empty action (strictness).
+- A table-driven test covers every branch of the decision rule, and a low-severity finding still yields an action.
 - `py-yaml` (calls `yaml.load`) scores higher than `py-yaml-safe` (calls `yaml.safe_load`), and both are listed.
-- Call sites found in each fixture service match `fixtures/expected/callsites.json`, and a file with a syntax error is skipped with a warning.
-- `simulate-attack` raises evidence to 3, and `--compromise` raises it to 4.
+- Call sites are found for the Node, Python, Java, Rust and PHP fixtures, and a file with a syntax error is skipped with a warning.
+- `simulate-attack` raises evidence to 3, and `--compromise` raises it to 4. With `takedown` allowed that changes the decision to takedown.
 - `hedwig replay log4shell --dry-run --json` gives the expected decision.
 
 ## Phase 3: Multi-agent fixing system (local)

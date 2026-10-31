@@ -16,4 +16,5 @@ Each folder under `projects/` is one service, the same shape `hedwig init` expec
 - `osv/`: `querybatch.request.json` and `querybatch.json`, plus the full record for every returned vuln in `vulns/`
 - `kev.json`: CISA KEV catalog trimmed to a few CVEs
 - `epss.json`: EPSS scores for the CVEs above
-- `replay/`: `log4shell.json` and `jsonwebtoken.json` (fix needs major 9.0.0), OSV records with an explicit `affected[].versions` list
+
+The replay advisories (`log4shell`, `jsonwebtoken`) ship inside the package: `src/hedwig/data/replay/`.

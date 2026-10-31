@@ -1,0 +1,18 @@
+{
+  "modules": {
+    "PyPI:pyyaml": ["yaml"],
+    "PyPI:pillow": ["PIL"],
+    "PyPI:beautifulsoup4": ["bs4"],
+    "PyPI:scikit-learn": ["sklearn"],
+    "PyPI:opencv-python": ["cv2"],
+    "PyPI:python-dateutil": ["dateutil"],
+    "PyPI:pyjwt": ["jwt"],
+    "Packagist:phpmailer/phpmailer": ["PHPMailer\\PHPMailer"]
+  },
+  "dangerous": {
+    "PyPI:pyyaml": ["load", "load_all", "full_load", "full_load_all", "unsafe_load", "unsafe_load_all"],
+    "npm:lodash": ["template", "merge", "mergeWith", "defaultsDeep", "set", "setWith", "zipObjectDeep", "trim", "trimStart", "trimEnd", "toNumber"],
+    "npm:jsonwebtoken": ["verify", "sign"],
+    "crates.io:regex": ["new", "build"]
+  }
+}

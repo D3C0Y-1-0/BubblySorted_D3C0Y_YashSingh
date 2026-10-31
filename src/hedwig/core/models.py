@@ -20,6 +20,22 @@ class Factors(BaseModel):
     confidence: float
 
 
+class CallSite(BaseModel):
+    file: str  # relative to the service folder
+    line: int
+    function: str  # enclosing function, or <module>
+    symbol: str  # what was called, e.g. yaml.load
+
+
+class Decision(BaseModel):
+    """What the policy gate does with a finding. Fixing itself arrives in Phase 3."""
+
+    action: str  # fix | takedown | notify
+    reason: str
+    on_verified: str | None = None  # merge | review_pr (only when action is fix)
+    on_failed: str | None = None  # takedown | failed_pr (only when action is fix)
+
+
 class Finding(BaseModel):
     id: str  # CVE if there is one, else the first advisory id
     ids: list[str]  # every advisory id and alias merged into this finding
@@ -36,7 +52,12 @@ class Finding(BaseModel):
     needs_major: bool
     kev: bool
     epss: float | None
-    evidence_level: int
+    evidence_level: int  # 0 version present, 1 called, 2 KEV, 3 attack in logs, 4 compromise
+    reachability: str  # called | imported | not imported
+    call_sites: list[CallSite] = Field(default_factory=list)
+    attacks: list[str] = Field(default_factory=list)  # attack patterns seen in the service logs
+    compromise: bool = False  # a compromise marker was seen in the service logs
+    decision: Decision
     factors: Factors
     risk: float
     severity: str  # critical | high | medium | low

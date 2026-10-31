@@ -94,6 +94,7 @@ def reasoning(
     epss: float | None,
     fixed: str | None,
     package_fix: str | None,
+    notes: list[str] | None = None,
 ) -> str:
     parts: list[str] = []
     if kev:
@@ -111,8 +112,9 @@ def reasoning(
         parts.append("high impact")
     elif impact < 0.4:
         parts.append("limited impact")
+    parts.extend(notes or [])
     parts.append(f"{tier}-tier service")
-    if not kev:
+    if not kev and not notes:
         parts.append("version present")
     text = f"{severity.capitalize()} because: {', '.join(parts)}."
     if fixed:

@@ -4,12 +4,16 @@ import re
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from functools import cmp_to_key
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from hedwig import config
-from hedwig.core import inventory, score, versions
+from hedwig.core import evidence, inventory, policy, reachability, score, versions
 from hedwig.core.advisories import AdvisorySource, affected_entries, norm_name
+from hedwig.core.code_index import CodeIndex, hinted_symbols
 from hedwig.core.models import Finding, Package, ScanResult, ServiceInfo
 
 GIT_URL = re.compile(r"^(https?://|git@|ssh://)|\.git$")
@@ -20,18 +24,45 @@ def is_git_url(target: str) -> bool:
     return bool(GIT_URL.search(target))
 
 
-def resolve_services(root: Path, default_tier: str) -> list[tuple[str, Path, str]]:
-    """(name, folder, tier) for each service. Services are folders."""
+DEFAULT_ALLOW = ["open_fix_pr"]
+
+
+@dataclass
+class ServiceSpec:
+    name: str
+    folder: Path
+    tier: str
+    allow: list[str]  # what Hedwig may do on its own: open_fix_pr, auto_merge_if_verified, ...
+    log_path: Path  # access log read for attack evidence
+
+
+def _spec(root: Path, name: str, folder: Path, tier: str, raw: dict | None) -> ServiceSpec:
+    raw = raw or {}
+    log = raw.get("log_path")
+    return ServiceSpec(
+        name=name,
+        folder=folder,
+        tier=raw.get("tier", tier),
+        allow=list(DEFAULT_ALLOW if raw.get("allow") is None else raw["allow"]),
+        log_path=root / log if log else folder / "logs" / "access.log",
+    )
+
+
+def resolve_services(root: Path, default_tier: str) -> list[ServiceSpec]:
+    """The services of a folder. Services are folders."""
     project = config.load_project(root)
     if project and project.get("services"):
         return [
-            (name, root / name, (spec or {}).get("tier", default_tier))
-            for name, spec in project["services"].items()
+            _spec(root, name, root / name, default_tier, raw)
+            for name, raw in project["services"].items()
             if (root / name).is_dir()
         ]
     if any((root / manifest).is_file() for manifest in config.MANIFESTS):
-        return [(root.name, root, default_tier)]
-    return [(name, root / name, default_tier) for name in config.discover_services(root)]
+        return [_spec(root, root.name, root, default_tier, None)]
+    return [
+        _spec(root, name, root / name, default_tier, None)
+        for name in config.discover_services(root)
+    ]
 
 
 def _groups(records: list[dict]) -> list[list[dict]]:
@@ -91,22 +122,22 @@ def _draft(group: list[dict], package: Package) -> dict:
         "summary": summary,
         "severity": severity,
         "fixed": _fixed_version(group, package),
+        "symbols": reachability.advisory_symbols(group, lambda r: affected_entries(r, package)),
     }
 
 
 def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = True) -> ScanResult:
     root = root.resolve()
     services = resolve_services(root, tier)
+    specs = {spec.name: spec for spec in services}
     warnings: list[str] = []
     packages: list[Package] = []
     infos: list[ServiceInfo] = []
-    tiers: dict[str, str] = {}
-    for name, folder, service_tier in services:
-        found, notes = inventory.parse_service(folder, name)
+    for spec in services:
+        found, notes = inventory.parse_service(spec.folder, spec.name)
         packages += found
         warnings += notes
-        tiers[name] = service_tier
-        infos.append(ServiceInfo(name=name, tier=service_tier, packages=len(found)))
+        infos.append(ServiceInfo(name=spec.name, tier=spec.tier, packages=len(found)))
     if not services:
         warnings.append(f"no services found in {root}; run `hedwig init` in the folder of services")
 
@@ -134,14 +165,25 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
     kev = kev or set()
     epss = source.epss(all_cves) if all_cves else {}
 
+    logs = {spec.name: evidence.read_log(spec.log_path) for spec in services}
+    indexes = {spec.name: CodeIndex(spec.folder) for spec in services}
     findings: list[Finding] = []
     for package, package_drafts, package_fix in drafts:
+        usage = indexes[package.service].usage(package)
+        log = logs[package.service]
+        spec = specs[package.service]
         for d in package_drafts:
             is_kev = any(c in kev for c in d["cves"])
             scores = [epss[c] for c in d["cves"] if c in epss]
             top_epss = max(scores) if scores else None
-            level = 2 if is_kev else 0
-            tier_name = tiers[package.service]
+            reach = reachability.assess(usage, d["symbols"] or hinted_symbols(package))
+            attacks = evidence.attacks_on(log, package.name)
+            level = max(
+                evidence.level(log, package.name),
+                2 if is_kev else 0,
+                1 if reach.state == "called" else 0,
+            )
+            tier_name = spec.tier
             factors, risk, severity = score.score(d["severity"], tier_name, level, is_kev, top_epss)
             findings.append(
                 Finding(
@@ -164,6 +206,11 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
                     kev=is_kev,
                     epss=top_epss,
                     evidence_level=level,
+                    reachability=reach.state,
+                    call_sites=reach.call_sites,
+                    attacks=attacks,
+                    compromise=log.compromise,
+                    decision=policy.decide(level, spec.allow),
                     factors=factors,
                     risk=risk,
                     severity=severity,
@@ -175,10 +222,13 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
                         top_epss,
                         d["fixed"],
                         package_fix,
+                        _evidence_notes(reach, attacks, log.compromise),
                     ),
                 )
             )
     findings.sort(key=lambda f: (-f.risk, f.service, f.id))
+    for index in indexes.values():
+        warnings += index.warnings
     result = ScanResult(
         root=str(root),
         offline=source.offline,
@@ -191,6 +241,20 @@ def scan(root: Path, source: AdvisorySource, tier: str = "medium", save: bool = 
     )
     if save:
         save_last(root, result)
+    return result
+
+
+def _evidence_notes(reach: reachability.Reach, attacks: list[str], compromise: bool) -> list[str]:
+    notes = {
+        "called": f"called in code ({reach.call_sites[0].symbol})" if reach.call_sites else "",
+        "imported": "imported, but no vulnerable call found",
+        "not imported": "not imported by this service's code",
+    }[reach.state]
+    result = [notes]
+    if attacks:
+        result.append(f"attack seen in logs ({', '.join(attacks)})")
+    if compromise:
+        result.append("signs of compromise in logs")
     return result
 
 
@@ -223,4 +287,7 @@ def load_last(root: Path) -> ScanResult | None:
     path = root / LAST_SCAN
     if not path.is_file():
         return None
-    return ScanResult.model_validate_json(path.read_text(encoding="utf-8"))
+    try:
+        return ScanResult.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError:
+        return None  # saved by an older version; the caller rescans

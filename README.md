@@ -49,11 +49,13 @@ This opens the Hedwig app. Type `/` to see the commands:
 | `/scan [path\|git-url]` | Find known vulnerabilities, ranked by risk. Add `--offline`, `--json`. Defaults to this folder |
 | `/status` | Findings per service in this folder |
 | `/explain <id>` | Reasoning, score factors and the recommended fix for one finding |
+| `/replay <advisory>` | Inject a known advisory (`log4shell`, `jsonwebtoken`) and show what Hedwig would do. Add `--dry-run`, `--json` |
+| `/simulate-attack <service>` | Write an attack request to the service's log. Add `--compromise` for a sign of compromise |
 | `/config` | Store your Groq API key (saved to `~/.hedwig/config.toml`). Also `/config show` and `/config set <key> <value>` |
 | `/doctor` | Check git, docker, npm, cargo, composer, mvn, tectonic |
 | `/clear`, `/help`, `/exit` | Clear the screen, list commands, leave |
 
-Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
+Every command also works directly: `hedwig init`, `hedwig scan`, `hedwig status`, `hedwig explain <id>`, `hedwig replay <advisory>`, `hedwig simulate-attack <service>`, `hedwig config`, `hedwig doctor`, `hedwig --version`.
 `init` always works on the folder you run it from.
 
 Run the install command again to update. The repo must be public for these links to work.
