@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "hedwig"
-version = "0.1.20"
+version = "2.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

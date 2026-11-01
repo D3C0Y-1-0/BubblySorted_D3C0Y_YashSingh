@@ -222,7 +222,16 @@ def handle_service(
     merged_any = False
     for (package, version), group in groups.items():
         say(f"  fixing {package} {version}")
-        run = orchestrator.run_fix(root, group, spec, source, publish=True)
+
+        def on_step(_run: Run, step, say: Say = say) -> None:
+            tag = {"running": "...", "ok": "ok", "failed": "FAILED", "skipped": "skipped"}
+            mark = tag.get(step.status, step.status)
+            line = f"    {step.name}: {mark}"
+            if step.detail:
+                line += f" — {step.detail[:160]}"
+            say(line)
+
+        run = orchestrator.run_fix(root, group, spec, source, on_step=on_step, publish=True)
         incident.run_ids.append(run.run_id)
         _run_events(incident, run)
         merged_any = merged_any or run.action in ("merged", "rolled_back")

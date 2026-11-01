@@ -27,14 +27,22 @@ PROBE_PATHS = [
 ]
 
 
+def run(ip: str = "127.0.0.5") -> dict[str, int]:
+    """Probes every well-known path. Returns path -> status code."""
+    seen: dict[str, int] = {}
+    with client(ip) as c:
+        for path in PROBE_PATHS:
+            r = c.get(path)
+            seen[path] = r.status_code
+            print(f"{path:<24} {r.status_code}")
+    return seen
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ip", default="127.0.0.5")
     args = parser.parse_args()
-    with client(args.ip) as c:
-        for path in PROBE_PATHS:
-            r = c.get(path)
-            print(f"{path:<24} {r.status_code}")
+    run(args.ip)
     print(f"done; watch {args.ip} on the dashboard")
 
 

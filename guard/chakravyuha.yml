@@ -12,7 +12,7 @@ challenge:
   session_minutes: 30           # a third of this for clients at hard_challenge
 services:
   web:
-    upstream: http://127.0.0.1:9100
+    upstream: http://127.0.0.1:19100
     prefix: /
     routes:
       - GET /
@@ -21,7 +21,7 @@ services:
       - GET /style.css
       - GET /health
   transaction:
-    upstream: http://127.0.0.1:9101
+    upstream: http://127.0.0.1:19101
     rate: 20
     login_paths: [/login]
     routes:
@@ -34,7 +34,7 @@ services:
     redirect_hosts: []
     uploads: false
   account:
-    upstream: http://127.0.0.1:9102
+    upstream: http://127.0.0.1:19102
     rate: 20
     routes:
       - GET /
@@ -42,7 +42,7 @@ services:
       - GET /profile
       - GET /statements
   support:
-    upstream: http://127.0.0.1:9103
+    upstream: http://127.0.0.1:19103
     rate: 20
     routes:
       - GET /
@@ -52,7 +52,7 @@ services:
       - POST /attachments
     uploads: [png, jpg, jpeg, pdf, txt]
   notifications:
-    upstream: http://127.0.0.1:9104
+    upstream: http://127.0.0.1:19104
     rate: 20
     routes:
       - GET /

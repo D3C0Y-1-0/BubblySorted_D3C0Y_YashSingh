@@ -22,12 +22,12 @@ AUDIT_TAIL = 60
 SNIPPET_CONTEXT = 3
 MAX_FINDINGS = 400
 INFRA = (
-    ("postgres", "database", "tcp", 5432),
-    ("redis", "cache", "redis", 6379),
-    ("qdrant", "vector store", "http://127.0.0.1:6333/healthz", 6333),
-    ("elasticsearch", "event store", "http://127.0.0.1:9200", 9200),
-    ("logstash", "event pipeline", "http://127.0.0.1:9600", 9600),
-    ("kibana", "search and dashboards", "http://127.0.0.1:5601/api/status", 5601),
+    ("postgres", "database", "tcp", 15432),
+    ("redis", "cache", "redis", 16379),
+    ("qdrant", "vector store", "http://127.0.0.1:16333/healthz", 16333),
+    ("elasticsearch", "event store", "http://127.0.0.1:19200", 19200),
+    ("logstash", "event pipeline", "http://127.0.0.1:19600", 19600),
+    ("kibana", "search and dashboards", "http://127.0.0.1:15601/api/status", 15601),
 )
 STACK = {"java": "Java", "rust": "Rust", "php": "PHP", "node": "Node", "python": "Python"}
 
@@ -144,14 +144,20 @@ def hedwig_data(bank: Path | None) -> dict[str, Any]:
                 audit.append(json.loads(line))
             except ValueError:
                 continue
-    for run in runs:
-        run.pop("steps", None)
+    runs = list(reversed(runs))
+    incidents = list(reversed(incidents))
+    active_run = next((r for r in runs if r.get("state") == "running"), runs[0] if runs else None)
+    active_incident = next(
+        (i for i in incidents if i.get("state") in ("running", "down")), None
+    )
     return {
         "scanned_at": scan.get("generated_at", ""),
         "findings": _findings(scan),
-        "runs": list(reversed(runs)),
-        "incidents": list(reversed(incidents)),
+        "runs": runs,
+        "incidents": incidents,
         "audit": audit,
+        "active_run": active_run,
+        "active_incident": active_incident,
         "note": "" if scan else "Run `hedwig scan` in guard/bank to fill this in.",
     }
 
@@ -186,6 +192,19 @@ def soc_file(bank: Path | None, name: str) -> Path | None:
         return None
     path = bank / ".hedwig" / "reports" / name
     return path if path.is_file() else None
+
+
+def clear_run(bank: Path | None, run_id: str) -> bool:
+    """Delete one fix run's folder (its run.json and artifacts), for the "Clear" button on the
+    Agents at work panel. If the pipeline is still writing to it, the next step recreates it."""
+    if bank is None or not run_id or "/" in run_id or run_id in (".", ".."):
+        return False
+    folder = (bank / ".hedwig" / "runs" / run_id).resolve()
+    base = (bank / ".hedwig" / "runs").resolve()
+    if base not in folder.parents or not folder.is_dir():
+        return False
+    shutil.rmtree(folder, ignore_errors=True)
+    return True
 
 
 def run_hedwig(bank: Path | None, args: list[str], repo: Path) -> tuple[bool, str]:

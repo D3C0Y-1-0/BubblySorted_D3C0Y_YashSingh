@@ -146,22 +146,21 @@ export function analyseForms(pageAnalysis, currentUrl) {
   }
 
   // ── Signal 4: BRAND_IMPERSONATION ────────────────────────────────────────
-  // Match the page title and body text against known social-engineering phrases
-  // used to create urgency and trick users into surrendering credentials.
+  // Account-threat wording phishing pages use to rush the victim
+  // ("your account has been suspended", "verify your identity").
+  // The detail quotes the exact text found, so the claim can be checked.
   {
     const textToCheck = `${pageTitle} ${bodyText}`;
-    const matched = IMPERSONATION_TEXT_PATTERNS.filter((pattern) =>
-      pattern.test(textToCheck)
-    );
+    const quotes = IMPERSONATION_TEXT_PATTERNS
+      .map((pattern) => (textToCheck.match(pattern) || [])[0])
+      .filter(Boolean);
 
-    if (matched.length > 0) {
-      // Convert the matching RegExp objects to human-readable strings for detail.
-      const examples = matched.slice(0, 2).map((r) => r.source).join("; ");
+    if (quotes.length > 0) {
       signals.push({
         id:     "BRAND_IMPERSONATION",
-        label:  "Brand impersonation content",
+        label:  "Account-threat wording",
         weight: SIGNAL_WEIGHTS.BRAND_IMPERSONATION,
-        detail: `Page text matches ${matched.length} social-engineering pattern(s). Examples: ${examples}`,
+        detail: `Page says: ${quotes.slice(0, 2).map((q) => `"${q}"`).join(", ")}.`,
       });
     }
   }
@@ -207,12 +206,14 @@ export function analyseForms(pageAnalysis, currentUrl) {
   // A page title naming a protected brand (e.g. "PayPal - Log In") on a domain
   // that is NOT that brand's legitimate domain is a strong impersonation signal.
   // This catches HTTPS phishing pages that score too low on URL signals alone.
+  let brandInTitle = false;
   if (pageTitle && (hasPasswordField || hasLoginForm)) {
     const titleLower    = pageTitle.toLowerCase();
     const currentDomain = getRegisteredDomain(currentUrl);
     if (!LEGITIMATE_DOMAINS.has(currentDomain)) {
       for (const brand of PROTECTED_BRANDS_STRICT) {
         if (titleLower.includes(brand)) {
+          brandInTitle = true;
           signals.push({
             id:     "BRAND_IN_PAGE_TITLE",
             label:  `Brand "${brand}" impersonated in page title`,
@@ -226,46 +227,61 @@ export function analyseForms(pageAnalysis, currentUrl) {
     }
   }
 
-  // ── Signal 9: PHISHING_SIMULATION ───────────────────────────────────────
-  // Detects security testing pages, antivirus test suites, or explicit phishing
-  // demonstrations (e.g. Google's testsafebrowsing.appspot.com/s/phishing.html).
-  const isSimulationContent = SIMULATION_PATTERNS.some((p) => p.test(combinedContent)) ||
-                              SIMULATION_URL_PATTERNS.some((p) => p.test(currentUrl));
+  // ── Signal 9: PHISHING_SIMULATION (known phishing test page) ────────────
+  // A published test harness URL (e.g. testsafebrowsing.appspot.com/s/phishing.html)
+  // counts on its own. Test wording ("example of a phishing page") only counts
+  // when the page also asks for credentials: an article *about* phishing uses
+  // the same words and has no login form.
+  const hasCredentialForm = !!(hasPasswordField || hasLoginForm || hasCredentialFields);
+  const isTestUrl = SIMULATION_URL_PATTERNS.some((p) => p.test(currentUrl));
+  const testWording = hasCredentialForm
+    ? SIMULATION_PATTERNS.map((p) => (combinedContent.match(p) || [])[0]).find(Boolean)
+    : undefined;
+  const isSimulationContent = isTestUrl || !!testWording;
 
   if (isSimulationContent) {
     signals.push({
       id:     "PHISHING_SIMULATION",
-      label:  "Phishing simulation / demonstration detected",
+      label:  "Known phishing test page",
       weight: SIGNAL_WEIGHTS.PHISHING_SIMULATION,
-      detail: "Page explicitly demonstrates phishing, credential harvesting, or security testing patterns.",
+      detail: isTestUrl
+        ? "The address is a published phishing test page."
+        : `Login form next to the wording "${testWording}".`,
     });
   }
 
   // ── Signal 10: SOCIAL_ENGINEERING_URGENCY ────────────────────────────────
   // Fake update warnings, browser outdated alerts, or deceptive urgency prompts.
-  const matchedUrgency = SOCIAL_ENGINEERING_URGENCY_PATTERNS.filter((p) => p.test(combinedContent));
-  if (matchedUrgency.length > 0) {
+  const urgencyQuotes = SOCIAL_ENGINEERING_URGENCY_PATTERNS
+    .map((p) => (combinedContent.match(p) || [])[0])
+    .filter(Boolean);
+  if (urgencyQuotes.length > 0) {
     signals.push({
       id:     "SOCIAL_ENGINEERING_URGENCY",
-      label:  "Social engineering urgency / deceptive prompt",
+      label:  "Fake update or infection warning",
       weight: SIGNAL_WEIGHTS.SOCIAL_ENGINEERING_URGENCY,
-      detail: `Page contains ${matchedUrgency.length} deceptive urgency or fake-update alert pattern(s).`,
+      detail: `Page says: ${urgencyQuotes.slice(0, 2).map((q) => `"${q}"`).join(", ")}.`,
     });
   }
 
   // ── Signal 11: CREDENTIAL_HARVESTING_FIELDS ──────────────────────────────
-  // Presence of password and credential inputs in an unverified or simulation context.
+  // A password field on its own is just a login page: every site has one.
+  // It only counts when the same page also shows a phishing indicator.
   const hasAnyPassword = hasPasswordField || hasCredentialFields;
-  if (hasAnyPassword) {
-    // Flag if on a simulation page, an untrusted domain, or accompanied by social engineering urgency
-    if (isSimulationContent || !LEGITIMATE_DOMAINS.has(currentDomain) || matchedUrgency.length > 0) {
-      signals.push({
-        id:     "CREDENTIAL_HARVESTING_FIELDS",
-        label:  "Credential harvesting input fields",
-        weight: SIGNAL_WEIGHTS.CREDENTIAL_HARVESTING_FIELDS,
-        detail: "Username/password credential fields present in a simulation, untrusted, or high-risk context.",
-      });
-    }
+  const corroboration = [
+    isSimulationContent && "it is a known phishing test page",
+    urgencyQuotes.length > 0 && "it shows a fake update or infection warning",
+    brandInTitle && "its title names a brand this domain does not belong to",
+    signals.some((s) => s.id === "LOGIN_FORM_MISMATCH") && "the form posts to another domain",
+    signals.some((s) => s.id === "BRAND_IMPERSONATION") && "it uses account-threat wording",
+  ].filter(Boolean);
+  if (hasAnyPassword && corroboration.length > 0) {
+    signals.push({
+      id:     "CREDENTIAL_HARVESTING_FIELDS",
+      label:  "Password requested on a suspicious page",
+      weight: SIGNAL_WEIGHTS.CREDENTIAL_HARVESTING_FIELDS,
+      detail: `Asks for a password, and ${corroboration.join("; ")}.`,
+    });
   }
 
   // ── Score aggregation ─────────────────────────────────────────────────────

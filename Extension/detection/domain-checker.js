@@ -48,7 +48,8 @@ function shannonEntropy(str) {
  * @returns {number} length of the longest consonant run
  */
 function longestConsonantCluster(str) {
-  const consonants = /[bcdfghjklmnpqrstvwxyz]/i;
+  // Digits count too: "xk9z2j8qmf" is one 10-character run with no vowel.
+  const consonants = /[bcdfghjklmnpqrstvwxyz0-9]/i;
   let max = 0;
   let current = 0;
   for (const ch of str) {
@@ -80,27 +81,29 @@ function splitHostname(hostname) {
  * Criteria:
  *   - More than 4 digit characters in the label
  *   - Longest consonant cluster exceeds 5 characters
- *   - Shannon entropy > 3.5 bits/char (very high randomness)
+ *   - High entropy (> 3.5 bits/char) AND few vowels (< 25 %) in a label of 10+
+ *     characters. Entropy alone is not enough: any 12-letter English name with
+ *     few repeated letters ("stackoverflow" = 3.55) scores as high as a random one.
  *
  * @param {string} label
  * @returns {{ match: boolean, reason: string }}
  */
 function isRandomLookingLabel(label) {
-  const digitCount = (label.match(/\d/g) || []).length;
-  // Lowered from >4 to >2: even 3 digits in a short domain is suspicious
-  if (digitCount > 2) {
+  const letters = label.replace(/[^a-z0-9]/gi, "");
+  const digitCount = (letters.match(/\d/g) || []).length;
+  if (digitCount > 4) {
     return { match: true, reason: `contains ${digitCount} digit characters` };
   }
 
-  const cluster = longestConsonantCluster(label);
+  const cluster = longestConsonantCluster(letters);
   if (cluster > 5) {
-    return { match: true, reason: `consonant cluster of ${cluster} characters` };
+    return { match: true, reason: `has a run of ${cluster} characters with no vowel` };
   }
 
-  const entropy = shannonEntropy(label);
-  // Lowered from 3.5 to 3.0: catches more DGA-style labels
-  if (entropy > 3.0) {
-    return { match: true, reason: `high character entropy (${entropy.toFixed(2)} bits)` };
+  const entropy = shannonEntropy(letters);
+  const vowelRatio = letters.length ? (letters.match(/[aeiou]/gi) || []).length / letters.length : 1;
+  if (letters.length >= 10 && entropy > 3.5 && vowelRatio < 0.25) {
+    return { match: true, reason: `looks random (entropy ${entropy.toFixed(2)} bits, ${Math.round(vowelRatio * 100)}% vowels)` };
   }
 
   return { match: false, reason: "" };
@@ -212,12 +215,12 @@ export async function analyseDomain(hostname) {
     // Sub-check A: Random / DGA-like label
     const randomCheck = isRandomLookingLabel(sld);
     if (randomCheck.match) {
-      newDomainDetail = `Second-level label "${sld}" ${randomCheck.reason}, consistent with algorithmically generated domains.`;
+      newDomainDetail = `Domain name "${sld}" ${randomCheck.reason}, like machine-generated phishing domains.`;
     }
 
     // Sub-check B: Long label with mixed digits and hyphens
     if (!newDomainDetail && isSuspiciousLengthLabel(sld)) {
-      newDomainDetail = `Second-level label "${sld}" (${sld.length} chars) contains digits and hyphens — typical of freshly-registered phishing domains.`;
+      newDomainDetail = `Domain name "${sld}" is ${sld.length} characters long with both digits and hyphens, a common shape for throwaway phishing domains.`;
     }
 
     // Sub-check C: Brand + action keyword combination separated by hyphens
@@ -231,7 +234,8 @@ export async function analyseDomain(hostname) {
     if (newDomainDetail) {
       signals.push({
         id:     "NEW_DOMAIN_PATTERN",
-        label:  "Newly-registered domain pattern",
+        // No WHOIS lookup happens, so this must not claim the domain is new.
+        label:  "Suspicious domain name pattern",
         weight: SIGNAL_WEIGHTS.NEW_DOMAIN_PATTERN,
         detail: newDomainDetail,
       });

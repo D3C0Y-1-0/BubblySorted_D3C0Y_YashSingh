@@ -4,7 +4,7 @@ import re
 import smtplib
 import subprocess
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -261,7 +261,7 @@ def render_tex(data: ReportData) -> str:
         worst_color=SEVERITY_COLOR.get(worst.severity if worst else "low", "low"),
         name=data.name,
         root=data.root,
-        generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
+        generated=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
         summary=summary,
         findings=view,
         top=view[:TOP],
@@ -274,7 +274,7 @@ def render_tex(data: ReportData) -> str:
 
 
 def _stamp(iso: str) -> str:
-    return datetime.fromisoformat(iso).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def seconds_text(value: float | None) -> str:
@@ -314,7 +314,7 @@ def compile_pdf(root: Path, data: ReportData) -> Path:
     folder = root / REPORTS
     folder.mkdir(parents=True, exist_ok=True)
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", data.name).strip("-") or "report"
-    stem += "-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stem += "-" + datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     tex = folder / f"{stem}.tex"
     tex.write_text(render_tex(data), encoding="utf-8")
     return compile_tex(tex)
@@ -409,7 +409,7 @@ def mail_body(data: ReportData) -> str:
     if data.summaries and not data.incidents:
         lines += [next(iter(data.summaries.values())), ""]
     for incident in data.incidents:
-        lines += [_incident_summary(incident), "", "Timeline (UTC):"]
+        lines += [_incident_summary(incident), "", "Timeline (local time):"]
         lines += [f"- {_stamp(e.at)}  {e.event}  {e.detail}".rstrip() for e in incident.timeline]
         lines.append("")
     lines.append(f"{len(data.findings)} finding(s):")
