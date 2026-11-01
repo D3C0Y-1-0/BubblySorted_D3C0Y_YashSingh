@@ -62,10 +62,11 @@ Fill the dashboard with a scan of the bank:
 cd guard/bank && hedwig scan && cd ../..        # or the "Rescan" button on the dashboard
 ```
 
-The dashboard's own buttons that change anything — **Rescan**, **Generate and email SOC
-report**, and **Clear** (on the Agents at work panel, to drop one run's logs) — need the value of
-`CHAKRA_TOKEN` typed into the **Token** field under Controls first; without it, or with the wrong
-value, they fail with 401 and say so on the button itself.
+Two of the dashboard's own buttons do real work (email, a full rescan) and need the value of
+`CHAKRA_TOKEN` typed into the **Token** field under Controls first: **Rescan** and **Generate and
+email SOC report**. Without it, or with the wrong value, they fail with 401 and say so on the
+button itself. **Clear** (on the Agents at work panel, to drop one run's logs) needs no token —
+it only deletes a local file, so it clears instantly.
 
 Reset to a clean slate any time: `uv run --project guard python guard/tools/demo_reset.py` (restart the Guard).
 

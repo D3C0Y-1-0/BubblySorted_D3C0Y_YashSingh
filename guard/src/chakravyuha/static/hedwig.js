@@ -408,19 +408,11 @@ $("h-scan").addEventListener("click", async (e) => {
 $("agents-clear").addEventListener("click", async (e) => {
   const run = hedwig.active_run;
   if (!run) return;
-  e.target.disabled = true;
-  e.target.textContent = "Clearing...";
-  const r = await fetch(`/api/hedwig/runs/${encodeURIComponent(run.run_id)}`, {
-    method: "DELETE",
-    headers: bearer(),
-  });
-  e.target.disabled = false;
-  if (r.ok) {
-    e.target.textContent = "Clear";
-    hedwig.active_run = null;
-    renderAgents();
-  } else {
-    e.target.textContent = r.status === 401 ? "Clear (enter the token below)" : `Clear failed (${r.status})`;
+  hedwig.active_run = null; // hide it right away; no token needed, this is just a local delete
+  renderAgents();
+  const r = await fetch(`/api/hedwig/runs/${encodeURIComponent(run.run_id)}`, { method: "DELETE" });
+  if (!r.ok) {
+    e.target.textContent = `Clear failed (${r.status})`;
     setTimeout(() => (e.target.textContent = "Clear"), 4000);
   }
   refreshHedwig();
