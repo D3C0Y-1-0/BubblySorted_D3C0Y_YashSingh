@@ -58,7 +58,7 @@ function getLevelLabel(score) {
 function getThreatCategoryLabel(result) {
   if (!result) return "SAFE WEBSITE";
   if (result.threatCategory === "PHISHING_SIMULATION" || result.isSimulation) {
-    return "PHISHING SIMULATION";
+    return "PHISHING TEST PAGE";
   }
   if (result.threatCategory === "ACTIVE_PHISHING" || result.score >= 60) {
     return "ACTIVE PHISHING";
@@ -145,7 +145,8 @@ function renderRisk(result, tab) {
   scoreFill.style.stroke              = colour;
   const catLabel                      = getThreatCategoryLabel(result);
   riskLevel.textContent               = catLabel;
-  riskLevel.className                 = (catLabel === "PHISHING_SIMULATION") ? "risk-simulation" : getLevelClass(score);
+  const isTestPage                    = result.isSimulation || result.threatCategory === "PHISHING_SIMULATION";
+  riskLevel.className                 = isTestPage ? "risk-simulation" : getLevelClass(score);
   riskUrl.textContent                 = hostnameOf(url);
   riskUrl.title                       = url;
   riskAssessed.textContent            = result.assessedAt ? "Assessed " + relativeTime(result.assessedAt) : "";
