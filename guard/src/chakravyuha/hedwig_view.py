@@ -194,6 +194,19 @@ def soc_file(bank: Path | None, name: str) -> Path | None:
     return path if path.is_file() else None
 
 
+def clear_run(bank: Path | None, run_id: str) -> bool:
+    """Delete one fix run's folder (its run.json and artifacts), for the "Clear" button on the
+    Agents at work panel. If the pipeline is still writing to it, the next step recreates it."""
+    if bank is None or not run_id or "/" in run_id or run_id in (".", ".."):
+        return False
+    folder = (bank / ".hedwig" / "runs" / run_id).resolve()
+    base = (bank / ".hedwig" / "runs").resolve()
+    if base not in folder.parents or not folder.is_dir():
+        return False
+    shutil.rmtree(folder, ignore_errors=True)
+    return True
+
+
 def run_hedwig(bank: Path | None, args: list[str], repo: Path) -> tuple[bool, str]:
     """Start the hedwig command in the bank folder (the user's own tool, like a terminal)."""
     if bank is None:
