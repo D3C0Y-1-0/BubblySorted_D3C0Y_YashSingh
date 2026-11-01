@@ -57,7 +57,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["ui/warning.html"],
+      "resources": ["ui/warning.html", "assets/mascot.png"],
       "matches": ["<all_urls>"]
     }
   ],
@@ -66,4 +66,3 @@
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.groq.com"
   }
 }
-
