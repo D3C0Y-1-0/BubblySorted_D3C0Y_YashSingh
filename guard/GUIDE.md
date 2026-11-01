@@ -28,7 +28,12 @@ Then open in a browser:
 |---|---|
 | http://127.0.0.1:8080 | **The bank** (what a user sees). Sign in with `demo` / `demo-pass` |
 | http://127.0.0.1:8090 | **The live dashboard** — the seven rings and every attacker as a dot |
-| http://127.0.0.1:5601 | **Kibana** — search the full history (dashboard: "Hedwig Chakravyuha") |
+| http://127.0.0.1:15601 | **Kibana** — search the full history (dashboard: "Hedwig Chakravyuha") |
+
+Every Docker port is published on `127.0.0.1` in the **1xxxx range** on purpose, so nothing here clashes
+with what other projects keep on 8080, 5432, 6379 or 9200. Bank services: 19100 (web) and
+19101 to 19104. Postgres 15432, Redis 16379, Qdrant 16333, Elasticsearch 19200, Logstash 15000
+(API 19600), Kibana 15601. Only the Guard (8080) and its dashboard (8090) run on your machine.
 
 Stop everything:
 

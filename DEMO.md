@@ -38,7 +38,7 @@ uv run --project guard chakravyuha
 |---|---|
 | http://127.0.0.1:8080 | the bank (demo / demo-pass) |
 | http://127.0.0.1:8090 | **the dashboard**: architecture, infrastructure, vulnerabilities, live attack view |
-| http://127.0.0.1:5601 | Kibana (button "Open Kibana" on the dashboard) |
+| http://127.0.0.1:15601 | Kibana (button "Open Kibana" on the dashboard) |
 
 Fill the dashboard with a scan of the bank:
 
@@ -47,6 +47,10 @@ cd guard/bank && hedwig scan && cd ../..        # or the "Rescan" button on the 
 ```
 
 Reset to a clean slate any time: `uv run --project guard python guard/tools/demo_reset.py` (restart the Guard).
+
+All Docker ports are in the 1xxxx range (bank 19100-19104, Kibana 15601, Elasticsearch 19200, postgres
+15432, redis 16379, qdrant 16333), so nothing on this laptop should clash and no container needs to be
+stopped first. Only the Guard (8080) and its dashboard (8090) use common ports.
 
 ## 2. Story 1: fix a fresh repo (terminal, 4 min)
 

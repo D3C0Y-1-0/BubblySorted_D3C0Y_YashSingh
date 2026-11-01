@@ -42,7 +42,7 @@ def lines(since: str | None):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--since", help="first day to replay, YYYY-MM-DD")
-    parser.add_argument("--logstash", default="127.0.0.1:5000")
+    parser.add_argument("--logstash", default="127.0.0.1:15000")
     args = parser.parse_args(argv)
     url = f"http://{args.logstash}/"
     sent, batch = 0, []

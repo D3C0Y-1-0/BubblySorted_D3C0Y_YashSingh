@@ -1,5 +1,5 @@
 """Write dashboard.ndjson: the Chakravyuha Kibana dashboard (a data view, Lens panels, one
-dashboard). After changing a panel, with Kibana running on 127.0.0.1:5601:
+dashboard). After changing a panel, with Kibana running on 127.0.0.1:15601:
 
     uv run --project guard python guard/deploy/elk/kibana/make_dashboard.py
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 
-KIBANA = "http://127.0.0.1:5601"
+KIBANA = "http://127.0.0.1:15601"
 
 DATA_VIEW = "chakravyuha-dv"
 OUT = Path(__file__).with_name("dashboard.ndjson")

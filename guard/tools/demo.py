@@ -32,7 +32,7 @@ def http_ok(url: str) -> bool:
 def logstash_ok() -> bool:
     """Ask Logstash's own API: Docker's port proxy accepts connections even when it is down."""
     try:
-        pipelines = httpx.get("http://127.0.0.1:9600/_node/pipelines", timeout=3).json()
+        pipelines = httpx.get("http://127.0.0.1:19600/_node/pipelines", timeout=3).json()
         return "main" in pipelines.get("pipelines", {})
     except (httpx.HTTPError, ValueError):
         return False
@@ -69,9 +69,9 @@ def main() -> int:
     checks += [
         ("guard", http_ok("http://127.0.0.1:8080/__hedwig/health"), "http://127.0.0.1:8080"),
         ("dashboard", http_ok("http://127.0.0.1:8090/api/snapshot"), "http://127.0.0.1:8090"),
-        ("elasticsearch", http_ok("http://127.0.0.1:9200"), "http://127.0.0.1:9200"),
-        ("logstash", logstash_ok(), "http://127.0.0.1:5000 (API :9600)"),
-        ("kibana", http_ok("http://127.0.0.1:5601/api/status"), "http://127.0.0.1:5601"),
+        ("elasticsearch", http_ok("http://127.0.0.1:19200"), "http://127.0.0.1:19200"),
+        ("logstash", logstash_ok(), "http://127.0.0.1:15000 (API :19600)"),
+        ("kibana", http_ok("http://127.0.0.1:15601/api/status"), "http://127.0.0.1:15601"),
     ]
     width = max(len(name) for name, *_ in checks)
     for name, ok, where in checks:
@@ -85,7 +85,7 @@ def main() -> int:
 
     print("\n  Open the bank:   http://127.0.0.1:8080   (demo / demo-pass)")
     print("  Dashboard:       http://127.0.0.1:8090")
-    print("  Kibana:          http://127.0.0.1:5601/app/dashboards")
+    print("  Kibana:          http://127.0.0.1:15601/app/dashboards")
     print("  Attacks:         uv run --project guard python guard/tools/attacks/<script>.py")
     down = [name for name, ok, _ in checks if not ok]
     return 1 if down or exposed else 0

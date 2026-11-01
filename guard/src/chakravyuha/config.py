@@ -70,9 +70,9 @@ class Elk(BaseModel):
     """ELK connection settings. CHAKRA_LOGSTASH, CHAKRA_ELASTIC_URL and CHAKRA_KIBANA_URL win."""
 
     enabled: bool = True
-    logstash: str = "127.0.0.1:5000"
-    elastic_url: str = "http://127.0.0.1:9200"
-    kibana_url: str = "http://127.0.0.1:5601"
+    logstash: str = "127.0.0.1:15000"
+    elastic_url: str = "http://127.0.0.1:19200"
+    kibana_url: str = "http://127.0.0.1:15601"
     index: str = "chakravyuha-*"
 
 

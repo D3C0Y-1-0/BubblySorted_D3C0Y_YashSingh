@@ -2,6 +2,8 @@
 # The Guard itself runs natively next to it (`uv run --project guard chakravyuha`): Docker
 # Desktop rewrites source addresses, which would merge the loopback attackers into one IP.
 name: chakravyuha
+# Every host port is in the 1xxxx range on purpose: 8080, 5432, 6379, 9200 and the like are what
+# other projects on a laptop already use, and a clash means killing containers before a demo.
 # One Elastic version for all three (9.5.5, the newest with images on Docker Hub, Oct 2026).
 
 
@@ -9,30 +11,30 @@ services:
   # -- the bank -----------------------------------------------------------------------------
   web:
     build: ../bank/web
-    ports: ["127.0.0.1:9100:8080"]
+    ports: ["127.0.0.1:19100:8080"]
     restart: unless-stopped
 
   transaction:
     build: ../bank/transaction
-    ports: ["127.0.0.1:9101:8080"]
+    ports: ["127.0.0.1:19101:8080"]
     volumes: ["../bank/transaction/logs:/app/logs"]
     restart: unless-stopped
 
   account:
     build: ../bank/account
-    ports: ["127.0.0.1:9102:8080"]
+    ports: ["127.0.0.1:19102:8080"]
     volumes: ["../bank/account/logs:/app/logs"]
     restart: unless-stopped
 
   support:
     build: ../bank/support
-    ports: ["127.0.0.1:9103:8080"]
+    ports: ["127.0.0.1:19103:8080"]
     volumes: ["../bank/support/logs:/app/logs"]
     restart: unless-stopped
 
   notifications:
     build: ../bank/notifications
-    ports: ["127.0.0.1:9104:8080"]
+    ports: ["127.0.0.1:19104:8080"]
     volumes: ["../bank/notifications/logs:/app/logs"]
     restart: unless-stopped
 
@@ -42,7 +44,7 @@ services:
     environment:
       POSTGRES_PASSWORD: demo-only-not-a-secret
       POSTGRES_DB: bank
-    ports: ["127.0.0.1:5432:5432"]
+    ports: ["127.0.0.1:15432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -52,7 +54,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["127.0.0.1:6379:6379"]
+    ports: ["127.0.0.1:16379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -61,7 +63,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
-    ports: ["127.0.0.1:6333:6333"]
+    ports: ["127.0.0.1:16333:6333"]
     volumes: ["qdrantdata:/qdrant/storage"]
     restart: unless-stopped
 
@@ -72,7 +74,7 @@ services:
       discovery.type: single-node
       xpack.security.enabled: "false"   # bound to 127.0.0.1 only; never expose it
       ES_JAVA_OPTS: -Xms1g -Xmx1g
-    ports: ["127.0.0.1:9200:9200"]
+    ports: ["127.0.0.1:19200:9200"]
     volumes: ["esdata:/usr/share/elasticsearch/data"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
@@ -88,7 +90,7 @@ services:
       config.reload.automatic: "true"
       api.http.host: 0.0.0.0
     volumes: ["./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro"]
-    ports: ["127.0.0.1:5000:8080", "127.0.0.1:9600:9600"]  # events in (http), monitoring API
+    ports: ["127.0.0.1:15000:8080", "127.0.0.1:19600:9600"]  # events in (http), monitoring API
     depends_on:
       elasticsearch: { condition: service_healthy }
     restart: unless-stopped
@@ -97,7 +99,7 @@ services:
     image: kibana:9.5.5
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-    ports: ["127.0.0.1:5601:5601"]
+    ports: ["127.0.0.1:15601:5601"]
     depends_on:
       elasticsearch: { condition: service_healthy }
     healthcheck:

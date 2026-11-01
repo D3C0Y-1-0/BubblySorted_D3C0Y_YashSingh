@@ -17,7 +17,7 @@ import httpx
 
 from hedwig import config
 
-ELASTIC_URL = "http://127.0.0.1:9200"
+ELASTIC_URL = "http://127.0.0.1:19200"
 INDEX = "chakravyuha-*"
 MAX_EVENTS = 5000
 MAX_SHOWN = 8

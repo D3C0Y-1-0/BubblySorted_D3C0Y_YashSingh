@@ -22,12 +22,12 @@ AUDIT_TAIL = 60
 SNIPPET_CONTEXT = 3
 MAX_FINDINGS = 400
 INFRA = (
-    ("postgres", "database", "tcp", 5432),
-    ("redis", "cache", "redis", 6379),
-    ("qdrant", "vector store", "http://127.0.0.1:6333/healthz", 6333),
-    ("elasticsearch", "event store", "http://127.0.0.1:9200", 9200),
-    ("logstash", "event pipeline", "http://127.0.0.1:9600", 9600),
-    ("kibana", "search and dashboards", "http://127.0.0.1:5601/api/status", 5601),
+    ("postgres", "database", "tcp", 15432),
+    ("redis", "cache", "redis", 16379),
+    ("qdrant", "vector store", "http://127.0.0.1:16333/healthz", 16333),
+    ("elasticsearch", "event store", "http://127.0.0.1:19200", 19200),
+    ("logstash", "event pipeline", "http://127.0.0.1:19600", 19600),
+    ("kibana", "search and dashboards", "http://127.0.0.1:15601/api/status", 15601),
 )
 STACK = {"java": "Java", "rust": "Rust", "php": "PHP", "node": "Node", "python": "Python"}
 
