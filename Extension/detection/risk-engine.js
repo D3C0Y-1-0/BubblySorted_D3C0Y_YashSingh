@@ -1,7 +1,6 @@
 /**
  * risk-engine.js — Central risk aggregator for Hedwig Shield.
  *
- * Implements Hackathon Aggressive Detection Mode:
  *   Evaluates five distinct inputs:
  *     1. Domain reputation
  *     2. URL risk
@@ -9,15 +8,13 @@
  *     4. Credential harvesting indicators
  *     5. Groq AI analysis
  *
- * Domain reputation NEVER blindly overrides suspicious webpage behavior.
- * Legitimate infrastructure (including Google test domains) hosting phishing
- * simulations or credential-harvesting pages are detected and flagged.
+ * Domain reputation does not hide suspicious page behaviour: a trusted host
+ * serving a phishing test page or a credential form with phishing indicators
+ * is still scored on those indicators.
  *
- * Distinct threat categories:
- *   - ACTIVE PHISHING
- *   - PHISHING SIMULATION
- *   - SUSPICIOUS WEBSITE
- *   - SAFE WEBSITE
+ * The score is the sum of the signals that fired; nothing raises it to a
+ * fixed floor. Threat categories (ACTIVE_PHISHING, PHISHING_SIMULATION, shown
+ * as "Phishing test page", SUSPICIOUS_WEBSITE, SAFE_WEBSITE) follow the score.
  *
  * @module detection/risk-engine
  */
@@ -185,8 +182,7 @@ export async function assessRisk(url, pageAnalysis) {
   // ── Multi-input Signal Aggregation ────────────────────────────────────────
   const allSignals = mergeSignals(urlSignals, domainSignals, pageSignals);
 
-  // ── Aggressive Hackathon Detection Rules ──────────────────────────────────
-  // Check for simulation indicators
+  // Known phishing test page (published test URL, or test wording beside a login form)
   const isSimulation = allSignals.some((s) =>
     s.id === "PHISHING_SIMULATION" || s.id === "SECURITY_TEST_URL"
   );
@@ -219,13 +215,10 @@ export async function assessRisk(url, pageAnalysis) {
   // ── Threat Classification ─────────────────────────────────────────────────
   let threatCategory = THREAT_CATEGORIES.SAFE_WEBSITE.id;
 
-  if (isSimulation && (score >= 40 || credentialSignals.length > 0 || webpageSignals.length > 0)) {
-    // Phishing simulation or security test page
+  if (isSimulation && score >= 40) {
     threatCategory = THREAT_CATEGORIES.PHISHING_SIMULATION.id;
-    // Ensure simulation has high/critical severity in hackathon aggressive mode
-    score = Math.max(score, 75);
-  } else if (score >= 60 || credentialScore >= 35) {
-    // Active phishing or strong credential harvesting
+  } else if (score >= 60) {
+    // Only call it phishing when the evidence reaches the warning threshold.
     threatCategory = THREAT_CATEGORIES.ACTIVE_PHISHING.id;
   } else if (score >= 30) {
     threatCategory = THREAT_CATEGORIES.SUSPICIOUS_WEBSITE.id;
@@ -263,10 +256,11 @@ export async function assessRisk(url, pageAnalysis) {
 /**
  * Merge a validated AI analysis result into an existing deterministic risk result.
  *
- * In Hackathon Aggressive Detection Mode:
- *  - AI can identify phishing or phishing simulations regardless of domain reputation.
- *  - If AI identifies a simulation, threat category is set to PHISHING_SIMULATION and score is boosted.
- *  - If AI identifies active phishing with high confidence, score is boosted.
+ * The model's verdict is untrusted input. It only counts when:
+ *  - its confidence is at least AI_CONFIDENCE_THRESHOLD, and
+ *  - it names the specific reasons it saw (a bare "phishing: true" is ignored).
+ * Even then it adds at most AI_MAX_SCORE_CONTRIBUTION points, so the AI alone
+ * can never push a clean page over the warning threshold.
  *
  * @param {object} deterministicResult — full output from assessRisk()
  * @param {object} aiResult            — validated output from phishing-analyzer.js
@@ -277,37 +271,31 @@ export function mergeAiResult(deterministicResult, aiResult) {
     return { ...deterministicResult, aiResult, aiSignals: [] };
   }
 
+  const counts = aiResult.confidence >= AI_CONFIDENCE_THRESHOLD &&
+                 Array.isArray(aiResult.reasons) && aiResult.reasons.length > 0 &&
+                 (aiResult.isPhishing || aiResult.isSimulation);
+  if (!counts) {
+    return { ...deterministicResult, aiResult, aiSignals: [], aiScoreBoost: 0,
+             inputs: { ...deterministicResult.inputs, groqAi: aiResult } };
+  }
+
   const aiSignals = buildAiSignals(aiResult);
-  let scoreBoost = 0;
-  let threatCategory = deterministicResult.threatCategory;
-  let isSimulation = deterministicResult.isSimulation;
+  const isSimulation = deterministicResult.isSimulation || !!aiResult.isSimulation;
 
-  // Check if AI detected a simulation
-  if (aiResult.isSimulation || aiResult.threatCategory === "PHISHING_SIMULATION") {
+  // Scale the boost with confidence above the threshold: 65% -> 0, 100% -> the cap.
+  const confidenceRatio = (aiResult.confidence - AI_CONFIDENCE_THRESHOLD) /
+                          (100 - AI_CONFIDENCE_THRESHOLD);
+  const scoreBoost = Math.round(AI_MAX_SCORE_CONTRIBUTION * confidenceRatio);
+  const combinedScore = Math.min(100, deterministicResult.score + scoreBoost);
+
+  // The category follows the combined score, same rules as assessRisk().
+  let threatCategory = THREAT_CATEGORIES.SAFE_WEBSITE.id;
+  if (isSimulation && combinedScore >= 40) {
     threatCategory = THREAT_CATEGORIES.PHISHING_SIMULATION.id;
-    isSimulation = true;
-    // Boost simulation score so it crosses warning/block threshold
-    scoreBoost = Math.max(scoreBoost, 35);
-  } else if (aiResult.isPhishing) {
-    if (threatCategory === THREAT_CATEGORIES.SAFE_WEBSITE.id || threatCategory === THREAT_CATEGORIES.SUSPICIOUS_WEBSITE.id) {
-      threatCategory = THREAT_CATEGORIES.ACTIVE_PHISHING.id;
-    }
-  }
-
-  // Calculate score boost based on AI confidence
-  if (aiResult.confidence >= AI_CONFIDENCE_THRESHOLD && (aiResult.isPhishing || isSimulation)) {
-    const confidenceRatio = (aiResult.confidence - AI_CONFIDENCE_THRESHOLD) /
-                            (100 - AI_CONFIDENCE_THRESHOLD);
-    scoreBoost = Math.max(scoreBoost, Math.round(AI_MAX_SCORE_CONTRIBUTION * confidenceRatio));
-  }
-
-  let combinedScore = Math.min(100, deterministicResult.score + scoreBoost);
-
-  // If simulation or active phishing, ensure score is at least warning threshold
-  if (threatCategory === THREAT_CATEGORIES.PHISHING_SIMULATION.id) {
-    combinedScore = Math.max(combinedScore, 80);
-  } else if (threatCategory === THREAT_CATEGORIES.ACTIVE_PHISHING.id && aiResult.confidence >= 80) {
-    combinedScore = Math.max(combinedScore, 75);
+  } else if (combinedScore >= 60) {
+    threatCategory = THREAT_CATEGORIES.ACTIVE_PHISHING.id;
+  } else if (combinedScore >= 30) {
+    threatCategory = THREAT_CATEGORIES.SUSPICIOUS_WEBSITE.id;
   }
 
   const { label: level, colour } = getRiskLevel(combinedScore);
@@ -339,12 +327,16 @@ function buildAiSignals(aiResult) {
 
   const signals = [];
 
+  // These are the model's own words. They are labelled as AI opinion and carry
+  // no weight of their own: the score effect is the capped boost in mergeAiResult().
+  const note = `AI model opinion (${aiResult.confidence}% confidence), not independently verified.`;
+
   if (aiResult.isSimulation) {
     signals.push({
       id:     "AI_PHISHING_SIMULATION",
-      label:  "Phishing simulation / security demonstration detected",
-      weight: 40,
-      detail: `Deep behavioral analysis detected a security test or phishing demonstration (${aiResult.confidence}% confidence).`,
+      label:  "AI: looks like a phishing test page",
+      weight: 0,
+      detail: note,
       source: "ai",
     });
   }
@@ -352,9 +344,9 @@ function buildAiSignals(aiResult) {
   if (aiResult.impersonatedBrand) {
     signals.push({
       id:     "AI_BRAND_IMPERSONATION",
-      label:  `Brand impersonation — ${aiResult.impersonatedBrand}`,
-      weight: Math.round(aiResult.confidence * 0.3),
-      detail: `Deep behavioral analysis identified impersonation of ${aiResult.impersonatedBrand} with ${aiResult.confidence}% confidence.`,
+      label:  `AI: may be impersonating ${aiResult.impersonatedBrand}`,
+      weight: 0,
+      detail: note,
       source: "ai",
     });
   }
@@ -363,9 +355,9 @@ function buildAiSignals(aiResult) {
     aiResult.reasons.forEach((reason, i) => {
       signals.push({
         id:     `AI_REASON_${i}`,
-        label:  reason,
+        label:  `AI: ${reason}`,
         weight: 0,
-        detail: `Deep behavioral threat inspection (${aiResult.confidence}% confidence)`,
+        detail: note,
         source: "ai",
       });
     });
