@@ -72,15 +72,14 @@ function renderArch() {
     const attack = underAttack(svc.name);
     const tile = node("button", `svc ${svc.status}${attack ? " under-attack" : ""}`);
     tile.type = "button";
-    tile.append(node("span", "stack", svc.stack));
+    tile.title = `${svc.name}: ${svc.status}, ${svc.tier} tier`;
     const title = node("div", "svc-name");
     title.append(node("span", "dot-status"), document.createTextNode(svc.name));
     if (attack) title.append(node("span", "warn", "⚠"));
-    tile.append(title);
-    const risk = worstRisk(svc.name);
-    tile.append(node("small", "", `${svc.status} · ${svc.tier} · :${svc.port}`));
-    if (risk) tile.append(node("small", "risk", `top risk ${risk.toFixed(2)}`));
+    tile.append(title, node("small", "", svc.stack), node("small", "", `:${svc.port}`));
     if (attack) tile.append(node("small", "alert", "LIVE ATTACK: " + [...attack.cats].join(", ")));
+    const risk = worstRisk(svc.name);
+    if (risk) tile.append(node("span", `risk-pill${risk >= 0.7 ? " hot" : ""}`, `Top risk ${risk.toFixed(2)}`));
     tile.addEventListener("click", () => openReport(svc));
     grid.append(tile);
   }
@@ -93,9 +92,8 @@ function renderArch() {
   for (const item of arch.infra) {
     const li = node("li", item.status);
     li.append(node("span", "dot-status"), node("b", "", item.name),
-      node("span", "role", item.role), node("span", "port", `:${item.port}`));
-    if (item.version) li.append(node("span", "role", `v${item.version}`));
-    li.append(node("span", "state", item.status));
+      node("span", "role", item.role), node("span", "port", `:${item.port}`),
+      node("span", "ver", item.version ? `v${item.version}` : ""), node("span", "state", item.status));
     list.append(li);
   }
 }
@@ -132,11 +130,14 @@ function renderFindings() {
     const tr = node("tr", selected === f ? "sel" : "");
     const sev = node("td");
     sev.append(node("span", `badge ${f.severity}`, f.severity));
-    const pkg = node("td", "", f.version ? `${f.package}@${f.version}` : f.package);
+    // Maven ids ("org.apache.logging.log4j:log4j-core") show the artifact only; full id on hover
+    const full = f.version ? `${f.package}@${f.version}` : f.package;
+    const pkg = node("td", "", full.replace(/^[^:@]+:/, ""));
+    pkg.title = full;
     const tag = kindTag(f);
     if (tag) pkg.append(node("span", "kind", tag));
-    tr.append(sev, node("td", "", (f.risk || 0).toFixed(2)), node("td", "", f.service), pkg,
-      node("td", "", f.id), node("td", f.reachability === "called" ? "called" : "", f.reachability),
+    tr.append(sev, node("td", "", f.service), pkg, node("td", "", f.id),
+      node("td", "", (f.risk || 0).toFixed(2)), node("td", f.reachability === "called" ? "called" : "", f.reachability),
       node("td", "", f.decision));
     tr.addEventListener("click", () => {
       selected = f;
@@ -428,6 +429,16 @@ $("soc-open").addEventListener("click", () => {
   socBlock(section(out, "Reports for the SOC team"));
   $("svc-report").hidden = false;
 });
+
+// header clock, e.g. "Nov 1, 05:54"
+function tickClock() {
+  const d = new Date();
+  const month = d.toLocaleString("en-US", { month: "short" });
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  $("clock").textContent = `${month} ${d.getDate()}, ${hm}`;
+}
+tickClock();
+setInterval(tickClock, 10000);
 
 refreshArch();
 refreshHedwig();
