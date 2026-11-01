@@ -94,13 +94,13 @@ function isValidHttpUrl(urlString) {
 
 function applyThreatCategory(category, scoreVal, isSim) {
   if (category === "PHISHING_SIMULATION" || isSim) {
-    threatBadge.className = "critical simulation";
-    threatBadge.textContent = "PHISHING SIMULATION DETECTED";
-    threatIcon.textContent = "🧪";
-    if (warningTitle) warningTitle.textContent = "Phishing Simulation Detected";
+    threatBadge.className = "critical";
+    threatBadge.textContent = "PHISHING TEST PAGE";
+    threatIcon.textContent = "⚠";
+    if (warningTitle) warningTitle.textContent = "Known phishing test page";
     if (warningSubtitle) {
       warningSubtitle.textContent =
-        "This page demonstrates phishing behaviour and has been blocked by Hedwig's hackathon protection mode.";
+        "This page copies a phishing page on purpose so security tools can be tested. Hedwig Shield blocks it the same way it would block real phishing.";
     }
   } else if (category === "ACTIVE_PHISHING") {
     threatBadge.className = "critical";

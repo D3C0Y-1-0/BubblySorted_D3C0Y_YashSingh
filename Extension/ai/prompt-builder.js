@@ -1,9 +1,9 @@
 /**
  * prompt-builder.js — Constructs sanitized prompts for Groq phishing analysis.
  *
- * Implements Hackathon Aggressive Detection Mode:
- *   Instructs the model to evaluate actual webpage behaviour, forms, credential
- *   collection, and social engineering patterns independently of domain reputation.
+ * Asks the model to judge the page's actual behaviour (forms, where credentials
+ * go, impersonation, pressure tactics) independently of domain reputation, and
+ * to cite only evidence present in the data it is given.
  *
  * PRIVACY CONTRACT
  * ─────────────────
@@ -24,22 +24,19 @@ const MAX_URL_CHARS = 300;
 // Maximum page title length.
 const MAX_TITLE_CHARS = 120;
 
-// ── System prompt (Hackathon Aggressive Detection Mode) ──────────────────────
+// ── System prompt ──────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are analysing webpages for a cybersecurity phishing protection demonstration. Your job is to identify phishing characteristics and social engineering behaviour, not merely determine whether the hostname is reputable.
+const SYSTEM_PROMPT = `You review a webpage for a browser phishing filter. Judge what the page does (its forms, where credentials are sent, brand impersonation, pressure tactics), not just whether the hostname is well known.
 
-A legitimate website may intentionally host a phishing simulation or security test. Do not dismiss phishing indicators because the domain is trusted or the page identifies itself as a demonstration.
+Most pages are legitimate. A page that only talks about phishing or security (an article, a guide, a training course) is not phishing. A normal login form on the site it belongs to is not phishing. When the evidence is weak or missing, say the page is safe and give a low confidence.
 
-Evaluate the page's actual content, forms, credential collection behaviour, impersonation patterns and submission destinations.
+Classify the page as one of:
+- ACTIVE_PHISHING: it tries to collect credentials or payment details while pretending to be someone else, or under false pretences.
+- PHISHING_SIMULATION: a published phishing test page that copies a phishing page on purpose (for example Google's Safe Browsing test pages).
+- SUSPICIOUS_WEBSITE: some indicators, not enough to call it phishing.
+- SAFE_WEBSITE: no meaningful indicators.
 
-Distinguish between:
-- Active malicious phishing.
-- Phishing simulation or security demonstration.
-- Legitimate page without phishing characteristics.
-
-For this hackathon's aggressive detection mode, both active phishing and phishing simulations exhibiting clear phishing behaviour should trigger a protection warning.
-
-Never invent evidence. Explain exactly which observed indicators caused your verdict.
+Never invent evidence. Every reason must point to something in the data below (a quoted phrase, a form destination, a field, the URL).
 
 Return ONLY a JSON object with exactly this structure:
 {
@@ -56,8 +53,8 @@ Return ONLY a JSON object with exactly this structure:
 Rules:
 - Base your analysis only on the data provided. Do not hallucinate.
 - "confidence" reflects how certain you are (0-100), not the severity.
-- If the page is a security test, demo, or phishing simulation (e.g., Google Safe Browsing test), set "is_phishing": true, "is_simulation": true, "threat_category": "PHISHING_SIMULATION", and "recommendation": "Warn" or "Block".
-- "reasons" must list the specific signals you observed, not generic statements.
+- For a published phishing test page, set "is_simulation": true and "threat_category": "PHISHING_SIMULATION".
+- "reasons" must list the specific signals you observed, not generic statements. If you have none, return an empty list and "is_phishing": false.
 - "impersonated_brand" is null if no specific brand is being impersonated.
 - Return ONLY the JSON object. No markdown, no backticks, no extra text.`;
 
@@ -121,7 +118,7 @@ Form submission domains: ${formDomains.length > 0 ? formDomains.join(", ") : "no
 === DETERMINISTIC SIGNALS (from Hedwig rule engine) ===
 ${detSignals}
 
-Analyse this page for phishing and simulation behavior. Return ONLY the JSON object.`.trim();
+Analyse this page for phishing. Return ONLY the JSON object.`.trim();
 
   return [
     { role: "system", content: SYSTEM_PROMPT },
