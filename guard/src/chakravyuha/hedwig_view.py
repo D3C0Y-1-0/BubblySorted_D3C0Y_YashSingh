@@ -144,14 +144,20 @@ def hedwig_data(bank: Path | None) -> dict[str, Any]:
                 audit.append(json.loads(line))
             except ValueError:
                 continue
-    for run in runs:
-        run.pop("steps", None)
+    runs = list(reversed(runs))
+    incidents = list(reversed(incidents))
+    active_run = next((r for r in runs if r.get("state") == "running"), runs[0] if runs else None)
+    active_incident = next(
+        (i for i in incidents if i.get("state") in ("running", "down")), None
+    )
     return {
         "scanned_at": scan.get("generated_at", ""),
         "findings": _findings(scan),
-        "runs": list(reversed(runs)),
-        "incidents": list(reversed(incidents)),
+        "runs": runs,
+        "incidents": incidents,
         "audit": audit,
+        "active_run": active_run,
+        "active_incident": active_incident,
         "note": "" if scan else "Run `hedwig scan` in guard/bank to fill this in.",
     }
 

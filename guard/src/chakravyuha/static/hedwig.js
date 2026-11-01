@@ -9,7 +9,10 @@ const SEV = { low: 0, medium: 1, high: 2, critical: 3 };
 const ATTACK_ACTIONS = new Set(["blocked", "banned", "trapped"]);
 
 let arch = { services: [], infra: [] };
-let hedwig = { findings: [], runs: [], incidents: [], audit: [], soc_reports: [], note: "" };
+let hedwig = {
+  findings: [], runs: [], incidents: [], audit: [], soc_reports: [],
+  active_run: null, active_incident: null, note: "",
+};
 let selected = null;
 const recent = new Map(); // service -> { at, cats:Set, last: event }
 
@@ -214,6 +217,48 @@ function stamp(iso) {
   return (iso || "").replace("T", " ").slice(0, 19);
 }
 
+// ---- the incident banner and the live "agents at work" panel ------------------------------------
+function renderIncidentBanner() {
+  const box = $("h-incident-banner");
+  const inc = hedwig.active_incident;
+  if (!inc) {
+    box.hidden = true;
+    return;
+  }
+  const pr = inc.pr_number ? ` (PR #${inc.pr_number})` : "";
+  box.textContent = inc.state === "running"
+    ? `⚠ Incident: ${inc.service} is down${pr} — Hedwig is fixing it`
+    : `⚠ Incident: ${inc.service} is still down${pr} — waiting for a fix`;
+  box.hidden = false;
+}
+
+function stepLabel(s) {
+  return { running: "running", ok: "done", failed: "failed", skipped: "skipped" }[s.status] || s.status;
+}
+
+function renderAgents() {
+  const panel = $("agents-panel");
+  const run = hedwig.active_run;
+  if (!run || !(run.steps || []).length) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  $("agents-note").textContent =
+    `${run.service} · ${run.package} ${run.from_version} → ${run.to_version || "-"} · ` +
+    `attempt ${run.attempts || 1}${run.state === "running" ? " · running" : " · " + run.state}`;
+  const list = $("agents-steps");
+  list.replaceChildren();
+  for (const s of run.steps) {
+    const li = node("li", s.status);
+    li.append(node("span", "step-dot"), node("span", "step-name", s.name),
+      node("span", "step-detail", `${stepLabel(s)}${s.detail ? " — " + s.detail : ""}`),
+      node("span", "step-at", stamp(s.at).slice(11)));
+    li.title = s.detail || "";
+    list.append(li);
+  }
+}
+
 function renderLower() {
   const list = $("h-incidents");
   list.replaceChildren();
@@ -260,6 +305,8 @@ async function refreshHedwig() {
   renderFindings();
   renderLower();
   renderArch();
+  renderIncidentBanner();
+  renderAgents();
   if (selected) selected = hedwig.findings.find((f) => f.id === selected.id && f.service === selected.service) || null;
 }
 

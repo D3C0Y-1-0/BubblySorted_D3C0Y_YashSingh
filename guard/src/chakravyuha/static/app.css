@@ -162,6 +162,25 @@ tr.monitor td:nth-child(4)::after { content: " (monitor)"; color: var(--muted); 
   color: #fff; white-space: pre-line; animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--s10) 25%, transparent); } }
+.incident-banner {
+  margin: 12px 20px 0; padding: 12px 16px; border-radius: 10px; font-weight: 600;
+  background: color-mix(in srgb, var(--s10) 22%, var(--panel)); border: 1px solid var(--s10);
+  color: #fff; animation: pulse 1.6s ease-in-out infinite;
+}
+.panel.agents { margin: 16px 20px 0; }
+.step-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.step-list li {
+  display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;
+}
+.step-list .step-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
+.step-list li.running .step-dot { background: var(--gold); box-shadow: 0 0 6px var(--gold); animation: blink 0.9s step-start infinite; }
+.step-list li.ok .step-dot { background: var(--ok); }
+.step-list li.failed .step-dot { background: var(--s10); }
+.step-list li.skipped .step-dot { background: var(--muted); }
+.step-list .step-name { text-transform: capitalize; font-weight: 600; min-width: 70px; }
+.step-list .step-detail { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.step-list .step-at { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
 .pill.on { color: var(--ok); }
 .pill.off-line { color: var(--s5); }
 .held, .campaigns, .feed { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
