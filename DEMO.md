@@ -97,7 +97,7 @@ one-line summary of each stage at the end. What to say, stage by stage:
    honeypot)**, which says "stored" to everything. It finds a planted API key there and uses it:
    the **honeytoken alarm** bans it and emails the PM immediately.
 7. **Reports**: the PM digest (about 30 seconds after the first stop) names each attacker with
-   UTC timestamps; the **SOC report PDF** (timeline, indicators, planted-file hashes, ATT&CK
+   local timestamps; the **SOC report PDF** (timeline, indicators, planted-file hashes, ATT&CK
    techniques, actions) is written and emailed. On the dashboard, the dot colours show the
    attack type, and "Open Kibana" shows every event.
 

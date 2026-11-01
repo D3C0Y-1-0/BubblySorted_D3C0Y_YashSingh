@@ -30,7 +30,7 @@ Downtime: \textbf{(((i.downtime_text | tex)))}. State: ((( i.state | badge_state
 
 \small
 \begin{longtable}{@{}p{3.7cm}p{4.2cm}p{7.9cm}@{}}
-\headrow \hd{Time (UTC)} & \hd{Event} & \hd{Detail} \\
+\headrow \hd{Time (local)} & \hd{Event} & \hd{Detail} \\
 \endhead
 \rowcolors{1}{white}{rowgrey}
 ((* for e in i.rows *))
@@ -91,7 +91,7 @@ state ((( r.state | badge_state ))), outcome \textbf{(((r.action_text | hl)))}.
 
 \section{Time to action}
 \begin{longtable}{@{}p{5cm}p{6cm}p{3.8cm}@{}}
-\headrow \hd{Service / package} & \hd{Started (UTC)} & \hd{Time to action} \\
+\headrow \hd{Service / package} & \hd{Started (local)} & \hd{Time to action} \\
 \endhead
 \rowcolors{1}{white}{rowgrey}
 ((* for r in runs *))
