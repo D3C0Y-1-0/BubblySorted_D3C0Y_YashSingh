@@ -237,6 +237,79 @@ function stepLabel(s) {
   return { running: "running", ok: "done", failed: "failed", skipped: "skipped" }[s.status] || s.status;
 }
 
+// ---- the live task graph: one row per attempt -----------------------------------------------------
+// The orchestrator (src/hedwig/core/agents/orchestrator.py) appends steps to a flat list:
+//   plan (setup) → [plan → fixer → checks → tester → run → verifier] per attempt → reporter → publish → act → deploy
+// Rows are found by step name: a failed `plan` replaces its "attempt N" detail with the error.
+const FINISH_STEPS = new Set(["reporter", "publish", "act", "deploy"]);
+const STATUS_ICON = { ok: "✓", failed: "✗", running: "●", skipped: "–" };
+const expanded = new Set(); // `${run_id}:${index}` of nodes the viewer opened
+let graphRunId = null;
+let graphCount = 0; // steps rendered last time, to fade in only the new ones
+
+function groupSteps(steps) {
+  const rows = [];
+  let current = null;
+  let attempt = 0;
+  let finishing = false;
+  steps.forEach((s, index) => {
+    const item = { s, index };
+    if (!finishing && FINISH_STEPS.has(s.name)) {
+      finishing = true;
+      current = { label: "Finish", kind: "finish", items: [] };
+      rows.push(current);
+    } else if (!finishing && s.name === "plan") {
+      const setup = index === 0;
+      if (!setup) attempt += 1;
+      current = setup
+        ? { label: "Setup", kind: "setup", items: [] }
+        : { label: `Attempt ${attempt}`, kind: "attempt", items: [] };
+      rows.push(current);
+    } else if (!current) {
+      current = { label: "Steps", kind: "attempt", items: [] };
+      rows.push(current);
+    }
+    current.items.push(item);
+  });
+  return rows;
+}
+
+function elapsed(iso) {
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  return secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`;
+}
+
+function nodeTime(s) {
+  return s.status === "running" && s.at ? `${elapsed(s.at)} so far` : stamp(s.at).slice(11);
+}
+
+function stepNode(run, { s, index }, isNew) {
+  const key = `${run.run_id}:${index}`;
+  const open = expanded.has(key);
+  const btn = node("button", `tg-node ${s.status}${open ? " open" : ""}${isNew ? " new" : ""}`);
+  btn.type = "button";
+  btn.setAttribute("role", "listitem");
+  btn.setAttribute("aria-expanded", String(open));
+  btn.dataset.at = s.at || "";
+  const head = node("span", "tg-head");
+  head.append(node("span", "tg-icon", STATUS_ICON[s.status] || "•"), node("span", "tg-name", s.name),
+    node("span", "tg-time", nodeTime(s)));
+  btn.append(head);
+  if (open) {
+    const body = node("span", "tg-body");
+    body.append(node("span", "tg-detail", `${stepLabel(s)}${s.detail ? " — " + s.detail : ""}`),
+      node("span", "tg-at", stamp(s.at)));
+    btn.append(body);
+  }
+  btn.title = open ? "Click to collapse" : "Click for details";
+  btn.addEventListener("click", () => {
+    if (expanded.has(key)) expanded.delete(key);
+    else expanded.add(key);
+    renderAgents();
+  });
+  return btn;
+}
+
 function renderAgents() {
   const panel = $("agents-panel");
   const run = hedwig.active_run;
@@ -248,17 +321,54 @@ function renderAgents() {
   $("agents-note").textContent =
     `${run.service} · ${run.package} ${run.from_version} → ${run.to_version || "-"} · ` +
     `attempt ${run.attempts || 1}${run.state === "running" ? " · running" : " · " + run.state}`;
-  const list = $("agents-steps");
-  list.replaceChildren();
-  for (const s of run.steps) {
-    const li = node("li", s.status);
-    li.append(node("span", "step-dot"), node("span", "step-name", s.name),
-      node("span", "step-detail", `${stepLabel(s)}${s.detail ? " — " + s.detail : ""}`),
-      node("span", "step-at", stamp(s.at).slice(11)));
-    li.title = s.detail || "";
-    list.append(li);
+
+  if (run.run_id !== graphRunId) {
+    expanded.clear();
+    graphRunId = run.run_id;
+    graphCount = run.steps.length; // a run seen for the first time appears at once, no fade
   }
+  const graph = $("agents-graph");
+  graph.replaceChildren();
+  let previousRow = null;
+  for (const row of groupSteps(run.steps)) {
+    if (previousRow) {
+      const last = previousRow.items[previousRow.items.length - 1].s;
+      const retry = row.kind === "attempt" && previousRow.kind === "attempt" && last.status === "failed";
+      const link = node("div", `tg-link ${last.status}${retry ? " retry" : ""}`);
+      link.setAttribute("aria-hidden", "true");
+      if (retry) link.append(node("span", "tg-link-label", "retry"));
+      graph.append(link);
+    }
+    const rowEl = node("div", `tg-row ${row.kind}`);
+    rowEl.append(node("span", "tg-label", row.label));
+    const flow = node("div", "tg-flow");
+    row.items.forEach((item, i) => {
+      const stepEl = stepNode(run, item, item.index >= graphCount);
+      if (i === 0) {
+        flow.append(stepEl);
+        return;
+      }
+      // the arrow travels with the node it points to, so a wrapped row never ends in a loose arrow
+      const pair = node("span", "tg-pair");
+      const edge = node("span", `tg-edge ${row.items[i - 1].s.status}`);
+      edge.setAttribute("aria-hidden", "true");
+      pair.append(edge, stepEl);
+      flow.append(pair);
+    });
+    rowEl.append(flow);
+    graph.append(rowEl);
+    previousRow = row;
+  }
+  graphCount = run.steps.length;
 }
+
+// a running node's "12s so far" ticks every second without waiting for the next refresh
+setInterval(() => {
+  for (const el of document.querySelectorAll(".tg-node.running")) {
+    const t = el.querySelector(".tg-time");
+    if (t && el.dataset.at) t.textContent = `${elapsed(el.dataset.at)} so far`;
+  }
+}, 1000);
 
 function renderLower() {
   const list = $("h-incidents");
@@ -440,7 +550,18 @@ function tickClock() {
 tickClock();
 setInterval(tickClock, 10000);
 
+// Poll every second while a fix run is in progress, so the task graph moves live; 4 s otherwise.
+const LIVE_REFRESH_MS = 1000;
+async function hedwigLoop() {
+  try {
+    await refreshHedwig();
+  } catch (err) {
+    console.error("hedwig refresh failed", err); // keep polling; the next tick may succeed
+  }
+  const running = hedwig.active_run && hedwig.active_run.state === "running";
+  setTimeout(hedwigLoop, running ? LIVE_REFRESH_MS : REFRESH_MS);
+}
+
 refreshArch();
-refreshHedwig();
 setInterval(refreshArch, REFRESH_MS);
-setInterval(refreshHedwig, REFRESH_MS);
+hedwigLoop();
