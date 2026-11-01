@@ -15,7 +15,7 @@ public final class HolidayCalendar {
     private final Holidays holidays;
 
     public HolidayCalendar(String yamlText) {
-        Yaml yaml = new Yaml(new Constructor(Holidays.class));
+        Yaml yaml = new Yaml(new Constructor(Holidays.class, new org.yaml.snakeyaml.LoaderOptions()));
         this.holidays = yaml.load(yamlText);
     }
 
