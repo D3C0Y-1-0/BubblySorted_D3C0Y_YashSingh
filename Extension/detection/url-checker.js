@@ -196,7 +196,9 @@ export async function analyseUrl(urlString) {
   // The `@` character in a URL's authority causes browsers to treat everything
   // before `@` as credentials, effectively hiding the real destination from
   // unsophisticated users (e.g. http://paypal.com@evil.com/).
-  if (url.username || url.password || urlString.includes("@")) {
+  // Only the authority counts: an @ in the path or query (medium.com/@user,
+  // mailto-style share links) is normal and hides nothing.
+  if (url.username || url.password) {
     signals.push({
       id:     "AT_SIGN_IN_URL",
       label:  "@ sign in URL authority",
@@ -258,20 +260,22 @@ export async function analyseUrl(urlString) {
   }
 
   // ── Signal 8: TYPOSQUATTING ───────────────────────────────────────────────
-  // Compare the registered domain label (without TLD) against every known
-  // brand. Flag if edit distance is 1 or 2 and the domain is not legitimate.
+  // Compare the registered domain label (without TLD) against the high-value
+  // brands that phishing kits actually target. The allowed edit distance grows
+  // with brand length: 1 edit for 5-7 letters, 2 for 8+. Shorter brands and a
+  // distance of 2 on short names match ordinary words (steam/teams, maple/apple).
   if (!LEGITIMATE_DOMAINS.has(registeredDomain)) {
     // Strip the TLD to get just the second-level label for comparison.
     const domainLabel = registeredDomain.replace(/\.[^.]+$/, "").toLowerCase();
 
-    for (const brand of KNOWN_BRANDS) {
-      // Skip very short brands (e.g. "x") to avoid spurious matches.
-      if (brand.length < 4) continue;
+    for (const brand of PROTECTED_BRANDS_STRICT) {
+      if (brand.length < 5) continue;
       // Skip if the label IS the brand (that would be a legitimate match).
       if (domainLabel === brand) continue;
 
+      const maxDist = brand.length >= 8 ? 2 : 1;
       const dist = levenshtein(domainLabel, brand);
-      if (dist >= 1 && dist <= 2) {
+      if (dist >= 1 && dist <= maxDist) {
         signals.push({
           id:     "TYPOSQUATTING",
           label:  "Possible typosquatting",
@@ -302,18 +306,22 @@ export async function analyseUrl(urlString) {
   }
 
   // ── Signal 10: MISLEADING_PATH ────────────────────────────────────────────
-  // A brand name appearing only in the path (e.g. evil.com/paypal/login) is
-  // a common trick to make URLs look legitimate in previews.
+  // A brand used as a path segment that looks like a sign-in route
+  // (evil.com/paypal/login, evil.com/paypal.com/, evil.com/secure-paypal) is a
+  // common trick. A brand merely mentioned in an article slug
+  // (/how-to-use-google-sheets) is not.
   if (!LEGITIMATE_DOMAINS.has(registeredDomain)) {
-    const pathLower = path.toLowerCase();
-    for (const brand of KNOWN_BRANDS) {
-      if (brand.length < 4) continue; // Ignore very short tokens
-      if (pathLower.includes(brand)) {
+    const segments = path.toLowerCase().split("/").filter(Boolean);
+    const ACTION = "(login|signin|sign-in|verify|secure|account|update|auth|recovery)";
+    for (const brand of PROTECTED_BRANDS_STRICT) {
+      const asSegment = new RegExp(`^${brand}(\\.com)?$`);
+      const withAction = new RegExp(`^(${brand}[-_.]?${ACTION}|${ACTION}[-_.]?${brand})`);
+      if (segments.some((s) => asSegment.test(s) || withAction.test(s))) {
         signals.push({
           id:     "MISLEADING_PATH",
           label:  "Brand name in path",
           weight: SIGNAL_WEIGHTS.MISLEADING_PATH,
-          detail: `Brand "${brand}" appears in the URL path of a non-legitimate domain.`,
+          detail: `The path uses "${brand}" as a sign-in style segment on "${registeredDomain}", which is not ${brand}'s domain.`,
         });
         break;
       }
@@ -376,9 +384,9 @@ export async function analyseUrl(urlString) {
     if (pattern.test(urlString)) {
       signals.push({
         id:     "SECURITY_TEST_URL",
-        label:  "Security testing or simulation URL",
+        label:  "Known phishing test URL",
         weight: SIGNAL_WEIGHTS.SECURITY_TEST_URL,
-        detail: `URL matches security testing/simulation pattern ${pattern}.`,
+        detail: "This address belongs to a published phishing test harness, built to look like phishing.",
       });
       break;
     }

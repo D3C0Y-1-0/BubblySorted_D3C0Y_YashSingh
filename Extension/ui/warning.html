@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Hedwig Shield — Warning</title>
+  <title>Hedwig Shield — Threat Intercept</title>
   <link rel="stylesheet" href="warning.css">
 </head>
 <body>
@@ -10,8 +10,13 @@
 
     <!-- Hedwig header bar -->
     <header id="warning-header">
-      <span id="brand-owl">🦉</span>
-      <span id="brand-label">HEDWIG SHIELD</span>
+      <img id="brand-owl" src="../assets/mascot.png" class="brand-mascot-img" alt="Hedwig">
+      <span class="brand-divider" aria-hidden="true"></span>
+      <div class="header-titles">
+        <span id="brand-label">HEDWIG</span>
+        <span class="header-sub">Shield · Threat Barrier</span>
+        <span class="live-tag"><span class="live-dot"></span>Threat intercepted</span>
+      </div>
     </header>
 
     <!-- Central warning card -->
@@ -29,7 +34,7 @@
 
       <!-- Blocked URL display -->
       <div id="url-display">
-        <span id="url-label">Flagged URL</span>
+        <span id="url-label">Flagged Destination</span>
         <span id="url-value"></span>
       </div>
 
@@ -58,7 +63,7 @@
 
       <!-- Disclaimer -->
       <p id="disclaimer">
-        Hedwig Shield uses heuristic analysis. False positives are possible.
+        Hedwig Shield uses deterministic and heuristic analysis. False positives are possible.
         If you are confident this site is safe, use "proceed anyway" at your own risk.
       </p>
 

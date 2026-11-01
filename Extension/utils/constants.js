@@ -18,7 +18,7 @@ export const RISK_LEVELS = {
 /** Threat category classifications for display. */
 export const THREAT_CATEGORIES = {
   ACTIVE_PHISHING:     { id: "ACTIVE_PHISHING",     label: "ACTIVE PHISHING",     colour: "#b71c1c" },
-  PHISHING_SIMULATION: { id: "PHISHING_SIMULATION", label: "PHISHING SIMULATION", colour: "#d32f2f" },
+  PHISHING_SIMULATION: { id: "PHISHING_SIMULATION", label: "PHISHING TEST PAGE",  colour: "#d32f2f" },
   SUSPICIOUS_WEBSITE:  { id: "SUSPICIOUS_WEBSITE",  label: "SUSPICIOUS WEBSITE",  colour: "#ff9800" },
   SAFE_WEBSITE:        { id: "SAFE_WEBSITE",        label: "SAFE WEBSITE",        colour: "#4caf50" },
 };
@@ -63,11 +63,11 @@ export const SIGNAL_WEIGHTS = {
   SENSITIVE_FORM_HTTP:      35,  // Any form requesting sensitive data over HTTP
   IFRAME_CREDENTIAL_FORM:       25,  // Login form inside a cross-origin iframe
 
-  // Aggressive hackathon signals
-  PHISHING_SIMULATION:          45,  // Explicit phishing simulation, demonstration or security test page
-  CREDENTIAL_HARVESTING_FIELDS: 35,  // Standalone or embedded credential inputs (username + password)
+  // Corroborated page signals
+  PHISHING_SIMULATION:          45,  // Known phishing test page (test URL, or test wording next to a login form)
+  CREDENTIAL_HARVESTING_FIELDS: 35,  // Login form that also shows another phishing indicator on the same page
   SOCIAL_ENGINEERING_URGENCY:   30,  // Fake update warnings, scareware or deceptive download prompts
-  SECURITY_TEST_URL:            20,  // URL structure points to a known security/phishing test harness
+  SECURITY_TEST_URL:            20,  // URL of a known phishing test harness (e.g. testsafebrowsing.appspot.com)
 };
 
 // ── Known brands for impersonation / typosquatting detection ────────────────
@@ -128,10 +128,11 @@ export const FREE_SUBDOMAIN_SERVICES = new Set([
 
 // ── Suspicious query parameter names typical in phishing ─────────────────────
 
+// Only names that are unusual on ordinary sites. Generic navigation parameters
+// (next, ref, redirect, continue, return, session, token, auth) appear on most
+// login and share links and are deliberately left out.
 export const PHISHING_QUERY_PARAMS = new Set([
-  "verify", "validate", "confirm", "secure", "login", "signin",
-  "account", "update", "token", "session", "auth", "otp",
-  "redirect", "continue", "next", "return", "ref",
+  "verify", "validate", "confirm", "otp", "password", "passwd",
 ]);
 
 // ── Brands that should only appear in eTLD+1, not in subdomain/path ──────────
@@ -184,14 +185,14 @@ export const SENSITIVE_FIELD_PATTERNS = [
 ];
 
 
-// ── Phishing simulation and security test patterns ──────────────────────────
+// ── Known phishing test pages ────────────────────────────────────────────────
+// Wording a phishing *test* page uses about itself. Articles about phishing use
+// the same words, so form-analyzer.js only counts these when the page also has
+// a login or password form.
 
 export const SIMULATION_PATTERNS = [
   /phishing (page|site|demonstration|demo|test|simulation|example)/i,
   /example of a phishing page/i,
-  /social engineering (content|example|demo|test)/i,
-  /security (test|testing|demonstration|demo|eval)/i,
-  /antivirus (test|evaluation|demo)/i,
   /safe browsing test/i,
   /malicious (page|site|url) (example|demo|test)/i,
 ];
@@ -206,10 +207,7 @@ export const SIMULATION_URL_PATTERNS = [
 ];
 
 export const SOCIAL_ENGINEERING_URGENCY_PATTERNS = [
-  /software (is )?out.?of.?date/i,
-  /browser (is )?(outdated|out.?of.?date)/i,
-  /trick you into clicking ["']?update["']?/i,
-  /mimics a dialogue from/i,
+  /your (browser|software) is (outdated|out.?of.?date)/i,
   /critical (security )?update required/i,
   /your (system|device|pc|mac|phone) is (infected|damaged|compromised)/i,
 ];
@@ -223,8 +221,6 @@ export const IMPERSONATION_TEXT_PATTERNS = [
   /unusual (sign.?in|activity|login) (activity|attempt|detected)/i,
   /your (payment|card|account) (information|details) (is|are) (required|needed)/i,
   /click here to (verify|confirm|restore|reactivate)/i,
-  /limited time/i,
-  /act now/i,
   /your (password|account) (expires?|expiring)/i,
 ];
 
