@@ -592,7 +592,8 @@ h2::after,
 .controls input,
 .controls select,
 .controls button,
-.held button {
+.held button,
+.agents button {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -614,7 +615,8 @@ h2::after,
 
 .filters button,
 .controls button,
-.held button {
+.held button,
+.agents button {
   cursor: pointer;
   background: linear-gradient(180deg, #173824 0%, #0E2418 100%);
   border-color: var(--gold-dim);
@@ -625,10 +627,16 @@ h2::after,
 
 .filters button:hover,
 .controls button:hover,
-.held button:hover {
+.held button:hover,
+.agents button:hover {
   background: linear-gradient(180deg, #224E33 0%, #153322 100%);
   border-color: var(--gold-border);
   color: #FFF;
+}
+
+#agents-clear:hover {
+  border-color: var(--s10);
+  color: var(--s10);
 }
 
 .filters button[aria-pressed="true"] {

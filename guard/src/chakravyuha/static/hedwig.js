@@ -405,6 +405,18 @@ $("h-scan").addEventListener("click", async (e) => {
   e.target.disabled = false;
   refreshHedwig();
 });
+$("agents-clear").addEventListener("click", async (e) => {
+  const run = hedwig.active_run;
+  if (!run) return;
+  hedwig.active_run = null; // hide it right away; no token needed, this is just a local delete
+  renderAgents();
+  const r = await fetch(`/api/hedwig/runs/${encodeURIComponent(run.run_id)}`, { method: "DELETE" });
+  if (!r.ok) {
+    e.target.textContent = `Clear failed (${r.status})`;
+    setTimeout(() => (e.target.textContent = "Clear"), 4000);
+  }
+  refreshHedwig();
+});
 $("svc-close").addEventListener("click", () => ($("svc-report").hidden = true));
 $("svc-report").addEventListener("click", (e) => {
   if (e.target.id === "svc-report") $("svc-report").hidden = true;
