@@ -18,24 +18,28 @@ services:
     build: ../bank/transaction
     ports: ["127.0.0.1:19101:8080"]
     volumes: ["../bank/transaction/logs:/app/logs"]
+    user: "1000:1000"  # the demo user, so ring 6's evidence line lands writable, not root-owned
     restart: unless-stopped
 
   account:
     build: ../bank/account
     ports: ["127.0.0.1:19102:8080"]
     volumes: ["../bank/account/logs:/app/logs"]
+    user: "1000:1000"
     restart: unless-stopped
 
   support:
     build: ../bank/support
     ports: ["127.0.0.1:19103:8080"]
     volumes: ["../bank/support/logs:/app/logs"]
+    user: "1000:1000"
     restart: unless-stopped
 
   notifications:
     build: ../bank/notifications
     ports: ["127.0.0.1:19104:8080"]
     volumes: ["../bank/notifications/logs:/app/logs"]
+    user: "1000:1000"
     restart: unless-stopped
 
   # -- infrastructure the bank would use (for the demo's infrastructure report) ------------------
