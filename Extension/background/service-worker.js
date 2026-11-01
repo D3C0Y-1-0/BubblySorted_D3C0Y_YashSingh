@@ -145,7 +145,7 @@ async function runAiAnalysis(tabId, pageData, detResult, settings) {
   });
 
   const warnThreshold = settings.warningThreshold ?? WARNING_THRESHOLD;
-  const shouldWarn = combined.score >= warnThreshold || combined.threatCategory === "PHISHING_SIMULATION";
+  const shouldWarn = combined.score >= warnThreshold;
   console.log("[HEDWIG] Protection decision:", {
     score: combined.score,
     category: combined.threatCategory,
@@ -166,8 +166,8 @@ async function runAiAnalysis(tabId, pageData, detResult, settings) {
     });
   }
 
-  // Redirect if combined score crosses warning threshold or simulation is confirmed
-  if (shouldWarn && (detResult.score < warnThreshold && detResult.threatCategory !== "PHISHING_SIMULATION")) {
+  // Redirect if the AI pushed the combined score over the warning threshold
+  if (shouldWarn && detResult.score < warnThreshold) {
     redirectToWarning(tabId, url, combined);
   }
 }
@@ -226,7 +226,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     updateBadge(details.tabId, result);
 
     const warnThreshold = settings.warningThreshold ?? WARNING_THRESHOLD;
-    const shouldWarn = result.score >= warnThreshold || result.threatCategory === "PHISHING_SIMULATION";
+    const shouldWarn = result.score >= warnThreshold;
     console.log("[HEDWIG] Protection decision:", {
       score: result.score,
       category: result.threatCategory,
@@ -280,14 +280,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result         = await assessRisk(url, data);
         const previousResult = await getTabRisk(tabId);
         const previousScore  = previousResult?.score ?? 0;
-        const previousCategory = previousResult?.threatCategory || "";
 
         console.log("[HEDWIG] Page analysis completed: score=" + result.score + ", category=" + result.threatCategory);
         await setTabRisk(tabId, result);
         updateBadge(tabId, result);
 
         const warnThreshold = settings.warningThreshold ?? WARNING_THRESHOLD;
-        const shouldWarn = result.score >= warnThreshold || result.threatCategory === "PHISHING_SIMULATION";
+        const shouldWarn = result.score >= warnThreshold;
         console.log("[HEDWIG] Protection decision:", {
           score: result.score,
           category: result.threatCategory,
@@ -295,7 +294,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           action: shouldWarn ? "block/warn" : "allow"
         });
 
-        if (shouldWarn && (previousScore < warnThreshold && previousCategory !== "PHISHING_SIMULATION")) {
+        if (shouldWarn && previousScore < warnThreshold) {
           redirectToWarning(tabId, url, result);
         }
         if (result.score >= 30 || result.threatCategory === "PHISHING_SIMULATION") {

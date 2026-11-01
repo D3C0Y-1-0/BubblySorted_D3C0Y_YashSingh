@@ -237,10 +237,9 @@ def create_dashboard(guard: Guard) -> Starlette:
         return JSONResponse({"ok": ok, "message": output[-300:]}, 200 if ok else 500)
 
     async def api_clear_run(request: Request):
-        """Delete one fix run's logs: the "Clear" button on the Agents at work panel."""
-        supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-        if not guard.token or not hmac.compare_digest(supplied.encode(), guard.token.encode()):
-            return JSONResponse({"ok": False, "error": "unauthorized"}, 401)
+        """Delete one fix run's logs: the "Clear" button on the Agents at work panel. No token:
+        it only deletes a local run folder (nothing external, nothing a retry won't recreate),
+        unlike Rescan or the SOC report, which send email or do real work."""
         ok = await asyncio.to_thread(hedwig_view.clear_run, bank, request.path_params["run_id"])
         return JSONResponse({"ok": ok}, 200 if ok else 404)
 
