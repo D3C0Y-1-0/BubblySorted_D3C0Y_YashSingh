@@ -892,26 +892,134 @@ tr.monitor td:nth-child(4)::after { content: " (monitor)"; color: var(--muted); 
 .panel.agents .panel-head { align-items: center; }
 .panel.agents .panel-head h2 { font-size: 16px; }
 
-.step-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
-.step-list li {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  cursor: pointer;
+/* Live task graph: one row per attempt, nodes joined by arrows, click a node to expand */
+.taskgraph { display: flex; flex-direction: column; margin-top: 4px; }
+
+.tg-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
 }
-.step-list li:hover { border-color: #3C3C48; }
-.step-list .step-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--muted-dim); }
-.step-list li.running .step-dot { background: var(--accent-soft); box-shadow: 0 0 8px var(--accent); animation: blink 0.9s step-start infinite; }
-.step-list li.ok .step-dot { background: var(--ok); }
-.step-list li.failed .step-dot { background: var(--s10); }
-.step-list li.skipped .step-dot { background: var(--muted-dim); }
-.step-list .step-name { text-transform: capitalize; font-weight: 700; min-width: 75px; color: #FFF; }
-.step-list .step-detail { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-.step-list .step-at { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+
+.tg-label {
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tg-row.finish .tg-label { color: var(--accent-text); }
+
+.tg-flow { display: flex; flex-wrap: wrap; align-items: flex-start; row-gap: 8px; }
+.tg-pair { display: inline-flex; align-items: flex-start; min-width: 0; }
+
+/* arrow between two nodes, coloured by the node it leaves */
+.tg-edge {
+  position: relative;
+  align-self: flex-start;
+  width: 28px;
+  height: 2px;
+  margin-top: 16px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+.tg-edge::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left: 6px solid var(--line);
+  border-right: 0;
+}
+.tg-edge.ok { background: rgba(34, 197, 94, 0.6); }
+.tg-edge.ok::after { border-left-color: rgba(34, 197, 94, 0.6); }
+.tg-edge.failed { background: rgba(239, 68, 68, 0.6); }
+.tg-edge.failed::after { border-left-color: rgba(239, 68, 68, 0.6); }
+
+/* vertical connector between rows; "retry" when the attempt above failed */
+.tg-link {
+  position: relative;
+  height: 22px;
+  margin-left: calc(84px + 12px + 22px);
+  border-left: 2px solid var(--line);
+}
+.tg-link.ok { border-left-color: rgba(34, 197, 94, 0.5); }
+.tg-link.retry { border-left: 2px dashed rgba(239, 68, 68, 0.7); }
+.tg-link-label {
+  position: absolute;
+  left: 8px;
+  top: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #FF8A8A;
+}
+
+/* a step node */
+.tg-node {
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 340px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.tg-node:hover { border-color: #3C3C48; background: var(--panel-hover); }
+.tg-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.tg-head { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tg-icon { width: 14px; text-align: center; font-weight: 800; color: var(--muted); }
+.tg-name { font-weight: 700; color: #FFF; text-transform: capitalize; }
+.tg-time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.tg-node.ok { border-color: rgba(34, 197, 94, 0.45); }
+.tg-node.ok .tg-icon { color: var(--ok); }
+.tg-node.failed { border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.07); }
+.tg-node.failed .tg-icon { color: var(--s10); }
+.tg-node.skipped { opacity: 0.7; border-style: dashed; }
+.tg-node.running {
+  border-color: var(--accent);
+  background: rgba(139, 92, 246, 0.1);
+  animation: tgPulse 1.6s ease-in-out infinite;
+}
+.tg-node.running .tg-icon { color: var(--accent-soft); animation: blink 0.9s step-start infinite; }
+
+@keyframes tgPulse {
+  50% { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.18), 0 0 14px rgba(139, 92, 246, 0.35); }
+}
+
+/* a node that just appeared */
+.tg-node.new { animation: tgIn 0.45s ease-out; }
+.tg-node.running.new { animation: tgIn 0.45s ease-out, tgPulse 1.6s ease-in-out 0.45s infinite; }
+@keyframes tgIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* expanded node shows the step's existing text */
+.tg-node.open { border-color: var(--accent-soft); }
+.tg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  white-space: normal;
+}
+.tg-detail { color: var(--text); font-size: 12px; line-height: 1.4; word-break: break-word; }
+.tg-at { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* ── Modal ──────────────────────────────────────────────────────────────── */
 .modal {
@@ -1002,4 +1110,7 @@ tr.monitor td:nth-child(4)::after { content: " (monitor)"; color: var(--muted); 
   .grid { grid-template-columns: 1fr; padding: 16px; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tile.wide { grid-column: span 2; }
+  .tg-row { grid-template-columns: 1fr; gap: 4px; }
+  .tg-label { padding-top: 0; }
+  .tg-link { margin-left: 22px; }
 }
