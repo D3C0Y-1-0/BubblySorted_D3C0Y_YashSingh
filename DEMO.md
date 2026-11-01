@@ -116,10 +116,12 @@ cd guard/bank && hedwig watch --branch test{i}          # leave it running; it i
 
 **a. The bot.** Comment the bot on both PRs at once: `uv run python tools/demo_prs.py comment {i}`
 (or type `/hedwig scan` on either PR on GitHub yourself). The bot replies with the vulnerabilities
-the PR introduces, and the PR's `hedwig` check turns red.
+the PR introduces. The `hedwig` check only fails on a high-or-above finding, so the **verified**
+(transaction) PR's check turns red; the **simple** (notifications) one stays green — its advisories
+are medium and low, and a plain version bump already fixes them, which is the point to make.
 
 **b. The simple one (notifications, a version bump fixes it).** Force the merge — these branches
-stay unprotected on purpose, so the red check does not block it:
+stay unprotected on purpose, so a red check (on the other PR) would not have blocked it either:
 
 ```sh
 uv run python tools/demo_prs.py merge {i} simple        # gh pr merge --merge --admin
