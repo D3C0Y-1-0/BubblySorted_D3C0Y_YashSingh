@@ -405,6 +405,23 @@ $("h-scan").addEventListener("click", async (e) => {
   e.target.disabled = false;
   refreshHedwig();
 });
+$("agents-clear").addEventListener("click", async (e) => {
+  const run = hedwig.active_run;
+  if (!run) return;
+  e.target.disabled = true;
+  e.target.textContent = "Clearing...";
+  const r = await fetch(`/api/hedwig/runs/${encodeURIComponent(run.run_id)}`, {
+    method: "DELETE",
+    headers: bearer(),
+  });
+  e.target.textContent = "Clear";
+  e.target.disabled = false;
+  if (r.ok) {
+    hedwig.active_run = null;
+    renderAgents();
+  }
+  refreshHedwig();
+});
 $("svc-close").addEventListener("click", () => ($("svc-report").hidden = true));
 $("svc-report").addEventListener("click", (e) => {
   if (e.target.id === "svc-report") $("svc-report").hidden = true;
