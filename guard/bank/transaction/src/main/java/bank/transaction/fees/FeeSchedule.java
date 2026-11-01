@@ -8,13 +8,13 @@ public final class FeeSchedule {
     private final FeeConfig config;
 
     public FeeSchedule(String yamlText) {
-        this.config = new Yaml(new Constructor(FeeConfig.class)).load(yamlText);
+        this.config = new Yaml(new Constructor(FeeConfig.class, new org.yaml.snakeyaml.LoaderOptions())).load(yamlText);
     }
 
     /** A schedule where the second document overrides the first one. */
     public static FeeSchedule merged(String base, String overrides) {
-        FeeConfig defaults = new Yaml(new Constructor(FeeConfig.class)).load(base);
-        FeeConfig changes = new Yaml(new Constructor(FeeConfig.class)).load(overrides);
+        FeeConfig defaults = new Yaml(new Constructor(FeeConfig.class, new org.yaml.snakeyaml.LoaderOptions())).load(base);
+        FeeConfig changes = new Yaml(new Constructor(FeeConfig.class, new org.yaml.snakeyaml.LoaderOptions())).load(overrides);
         FeeConfig result = new FeeConfig();
         result.base = changes.base != 0.0 ? changes.base : defaults.base;
         result.percent = changes.percent != 0.0 ? changes.percent : defaults.percent;
@@ -25,7 +25,7 @@ public final class FeeSchedule {
     /** Every document of a multi-document file, one schedule each (for scheduled changes). */
     public static java.util.List<FeeSchedule> all(String yamlText) {
         java.util.List<FeeSchedule> schedules = new java.util.ArrayList<>();
-        for (Object document : new Yaml(new Constructor(FeeConfig.class)).loadAll(yamlText)) {
+        for (Object document : new Yaml(new Constructor(FeeConfig.class, new org.yaml.snakeyaml.LoaderOptions())).loadAll(yamlText)) {
             schedules.add(new FeeSchedule((FeeConfig) document));
         }
         return schedules;
