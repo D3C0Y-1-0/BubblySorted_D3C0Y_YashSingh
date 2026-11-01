@@ -259,7 +259,8 @@ async function run() {
     `score: ${googleSearch.score}, category: ${googleSearch.threatCategory}`
   );
 
-  // Test: AI result merger detects simulation and boosts score
+  // Test: AI result merger recognises a test page but stays within the 40-point AI cap
+  // (90% confidence → round(40 × 25/35) = 29 points on top of the rule score of 30)
   const aiSimMerged = mergeAiResult(
     {
       url: "https://demo.security-test.org/login",
@@ -285,8 +286,8 @@ async function run() {
   );
 
   check(
-    "AI simulation result merges to PHISHING_SIMULATION category and score ≥80",
-    aiSimMerged.threatCategory === "PHISHING_SIMULATION" && aiSimMerged.score >= 80,
+    "AI test-page verdict sets the category and adds a capped, confidence-scaled boost (30 → 59)",
+    aiSimMerged.threatCategory === "PHISHING_SIMULATION" && aiSimMerged.score === 59,
     `category: ${aiSimMerged.threatCategory}, score: ${aiSimMerged.score}`
   );
 
