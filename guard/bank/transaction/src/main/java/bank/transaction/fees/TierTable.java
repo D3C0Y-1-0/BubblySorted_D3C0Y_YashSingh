@@ -15,7 +15,7 @@ public final class TierTable {
     private final Tiers tiers;
 
     public TierTable(String yamlText) {
-        Yaml yaml = new Yaml(new Constructor(Tiers.class));
+        Yaml yaml = new Yaml(new Constructor(Tiers.class, new org.yaml.snakeyaml.LoaderOptions()));
         this.tiers = yaml.load(yamlText);
     }
 
