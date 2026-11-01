@@ -1,0 +1,15 @@
+warning: in the working copy of 'Extension/manifest.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Extension/ui/popup.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Extension/ui/popup.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Extension/ui/warning.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Extension/ui/warning.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'guard/src/chakravyuha/static/app.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'guard/src/chakravyuha/static/index.html', LF will be replaced by CRLF the next time Git touches it
+ Extension/manifest.json                 |    3 [32m+[m[31m-[m
+ Extension/ui/popup.css                  |  793 [32m++++++++[m[31m-------[m
+ Extension/ui/popup.html                 |   10 [32m+[m[31m-[m
+ Extension/ui/warning.css                |  380 [32m++++[m[31m---[m
+ Extension/ui/warning.html               |   17 [32m+[m[31m-[m
+ guard/src/chakravyuha/static/app.css    | 1691 [32m++++++++++++++++++++++++++[m[31m-----[m
+ guard/src/chakravyuha/static/index.html |   19 [32m+[m[31m-[m
+ 7 files changed, 2140 insertions(+), 773 deletions(-)
