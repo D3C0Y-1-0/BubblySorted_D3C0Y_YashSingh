@@ -236,6 +236,13 @@ def create_dashboard(guard: Guard) -> Starlette:
         ok, output = await asyncio.to_thread(hedwig_view.run_hedwig, bank, args, repo)
         return JSONResponse({"ok": ok, "message": output[-300:]}, 200 if ok else 500)
 
+    async def api_clear_run(request: Request):
+        """Delete one fix run's logs: the "Clear" button on the Agents at work panel. No token:
+        it only deletes a local run folder (nothing external, nothing a retry won't recreate),
+        unlike Rescan or the SOC report, which send email or do real work."""
+        ok = await asyncio.to_thread(hedwig_view.clear_run, bank, request.path_params["run_id"])
+        return JSONResponse({"ok": ok}, 200 if ok else 404)
+
     return Starlette(
         routes=[
             Route("/", index),
@@ -244,6 +251,7 @@ def create_dashboard(guard: Guard) -> Starlette:
             Route("/api/snippet", api_snippet),
             Route("/api/soc/{name}", api_soc_file),
             Route("/api/run/{what}", api_run, methods=["POST"]),
+            Route("/api/hedwig/runs/{run_id}", api_clear_run, methods=["DELETE"]),
             Route("/api/snapshot", api_snapshot),
             Route("/api/stream", api_stream),
             Route("/api/control", api_control, methods=["POST"]),

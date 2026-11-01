@@ -17,7 +17,7 @@ import httpx
 
 from hedwig import config
 
-ELASTIC_URL = "http://127.0.0.1:9200"
+ELASTIC_URL = "http://127.0.0.1:19200"
 INDEX = "chakravyuha-*"
 MAX_EVENTS = 5000
 MAX_SHOWN = 8
@@ -161,7 +161,7 @@ def gather(root: Path, since: datetime) -> tuple[list[dict], str]:
 
 
 def _iso(event: dict) -> str:
-    return _stamp(event).astimezone(UTC).isoformat(timespec="seconds")
+    return _stamp(event).astimezone().isoformat(timespec="seconds")
 
 
 def summarise(events: list[dict], since: datetime, source: str) -> SocData:
@@ -208,7 +208,7 @@ def summarise(events: list[dict], since: datetime, source: str) -> SocData:
             minutes = event.get("hedwig.ban_minutes")
             if minutes:
                 until = _stamp(event) + timedelta(minutes=float(minutes))
-                who.banned_until = until.astimezone(UTC).strftime("%H:%M:%S UTC")
+                who.banned_until = until.astimezone().strftime("%H:%M:%S %Z")
         who.targets[f"{event.get('service') or '-'} {event.get('url.path') or ''}".strip()] += 1
         if event.get("user_agent.original"):
             who.agents.add(str(event["user_agent.original"]))
@@ -260,8 +260,8 @@ def summarise(events: list[dict], since: datetime, source: str) -> SocData:
         more=len(people) - len(shown),
         detailed=(serious or ranked)[:MAX_DETAILED],
         credential=credential,
-        since=since.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        until=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        since=since.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"),
+        until=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"),
         source=source,
         events=len(events),
         attackers=people,
@@ -320,7 +320,7 @@ def render(data: SocData) -> str:
     )
     return env.get_template("soc.tex.j2").render(
         d=data,
-        generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
+        generated=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
         severity_color=report.SEVERITY_COLOR.get(data.severity, "low"),
     )
 
@@ -333,7 +333,7 @@ def build_pdf(root: Path, since: str = "30m") -> tuple[Path, SocData]:
     data = summarise(events, cutoff, source)
     folder = root / report.REPORTS
     folder.mkdir(parents=True, exist_ok=True)
-    stem = "SOC-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stem = "SOC-" + datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     tex = folder / f"{stem}.tex"
     tex.write_text(render(data), encoding="utf-8")
     pdf = report.compile_tex(tex)

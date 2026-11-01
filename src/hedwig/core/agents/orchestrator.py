@@ -47,7 +47,14 @@ class _Pipeline:
         step.status, step.at = status, _now()
         if detail:
             step.detail = detail
-        audit.record(self.root, "step", run=self.run.run_id, step=step.name, status=status)
+        audit.record(
+            self.root,
+            "step",
+            run=self.run.run_id,
+            step=step.name,
+            status=status,
+            detail=step.detail[:200],
+        )
         self._publish(step)
 
     def _publish(self, step: Step) -> None:
@@ -231,7 +238,7 @@ def run_fix(
         )
         pipe.end(step, "skipped", f"using a plain summary ({err})")
     else:
-        pipe.end(step, "ok")
+        pipe.end(step, "ok", text.pr_title)
     runs.write_artifact(root, run.run_id, "summary.txt", text.report_summary)
 
     run = _act(pipe, root, repo, spec, run, lead, text, verified, publish, base_sha)
@@ -433,7 +440,8 @@ def _attempts(
                     pipe.end(step, "failed", error)
                     failures, run.failed_step, dirty = [error], "fixer", True
                     continue
-            pipe.end(step, "ok", f"{len(proposal.edits)} edit(s): {proposal.rationale}")
+            files = ", ".join(sorted({e.path for e in proposal.edits}))
+            pipe.end(step, "ok", f"{len(proposal.edits)} edit(s) in {files}: {proposal.rationale}")
 
         violations = guards.check_result(base_folder, new_folder, top, target, allowed, removal)
         if violations:
