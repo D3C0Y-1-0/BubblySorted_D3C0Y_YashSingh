@@ -414,11 +414,14 @@ $("agents-clear").addEventListener("click", async (e) => {
     method: "DELETE",
     headers: bearer(),
   });
-  e.target.textContent = "Clear";
   e.target.disabled = false;
   if (r.ok) {
+    e.target.textContent = "Clear";
     hedwig.active_run = null;
     renderAgents();
+  } else {
+    e.target.textContent = r.status === 401 ? "Clear (enter the token below)" : `Clear failed (${r.status})`;
+    setTimeout(() => (e.target.textContent = "Clear"), 4000);
   }
   refreshHedwig();
 });
